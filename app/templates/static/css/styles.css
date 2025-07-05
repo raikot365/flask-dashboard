@@ -1,0 +1,17 @@
+.contenedor {
+    width: 95%;
+    max-width: 1200px;
+    margin: auto;
+    padding: 40px 0;
+
+    display: grid;
+    grid-template-columns: auto;
+
+}
+
+.contenedor-graph {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+}
+

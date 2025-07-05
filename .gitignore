@@ -1,0 +1,6 @@
+./vscode
+.env
+create-produccion.sql
+produccion.sql
+/mariadb
+/grafana

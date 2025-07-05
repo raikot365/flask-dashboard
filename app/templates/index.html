@@ -1,0 +1,44 @@
+{% extends "layout.html" %}
+{% block body %}
+
+
+<div style="display: flex; justify-content: space-between;margin-top: 5px;margin-bottom: 5px;"> 
+  <div style="margin-left: 10px;">
+  <h3>Estado de las Máquinas</h3>
+  </div>
+
+  <a class="nav-link dropdown-toggle btn btn-secondary" data-bs-toggle="dropdown" href="#" role="button" aria-haspopup="true" aria-expanded="false" style="align-self: center; margin-right: 20px; padding: 8px;">Seleccionar Turno</a>
+    <div class="dropdown-menu">
+      <a class="dropdown-item" href="#">Mañana (7-15hs)</a>
+      <a class="dropdown-item" href="#">Tarde (15-23hs)</a>
+      <a class="dropdown-item" href="#">Noche (23-7hs)</a>
+    </div>
+  </div>
+  </div>
+
+<div class="contenedor" style="    
+    width: 95%;
+    max-width: 1200px;
+    margin: auto;
+    padding: 40px 0;
+    display: grid;
+    grid-template-columns: auto;">
+    <div class="contenedor-graph" style="
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;">
+
+        {% for m in maquinas %}
+          <div class="card border-primary mb-3" style="max-width: 20rem;">
+          <div class="card-header"><h4 class="card-title">Máquina Nº {{ m }}</h4></div>
+          <div class="card-body">
+            
+            <p class="card-text">Aquí iría el gráfico</p>
+          </div>
+          </div>  
+        {% endfor %}
+
+  </div>
+</div>
+
+{% endblock %}
