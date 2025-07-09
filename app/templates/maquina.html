@@ -213,19 +213,45 @@ async function fetchData() {
     else resumen.encendida++;
   });
 
-  const totalMin = data.length * 3;
+  data[0].date
+
+  const totalm = data.length;
+  const totalMin = totalm * 3;
   const crearLinea = (nombre, valor) => {
     const min = valor * 3;
     const pct = ((min / totalMin) * 100).toFixed(1);
     return `<strong>${nombre}</strong>: ${min} min (${pct}%)`;
   };
 
+  const fechaIniFormateada = timeSeries[0].toLocaleString('es-AR', {
+  weekday: 'long',
+  day: '2-digit',
+  month: 'long',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  timeZoneName: 'long'
+  });
+
+  const fechaFinFormateada = timeSeries[data.length-1].toLocaleString('es-AR', {
+  weekday: 'long',
+  day: '2-digit',
+  month: 'long',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  timeZoneName: 'long'
+  });
+
   const resumenHTML = `
     <div class="alert alert-light mt-4">
       <h5 class="mb-2">Resumen del turno:</h5>
       ${crearLinea('Produciendo', resumen.produciendo)}<br>
       ${crearLinea('Encendida sin producir', resumen.encendida)}<br>
-      ${crearLinea('Apagada', resumen.apagada)}
+      ${crearLinea('Apagada', resumen.apagada)}<br>
+      <strong>Primer muestra</strong>: ${fechaIniFormateada}<br>
+      <strong>Ultima muestra</strong>: ${fechaFinFormateada}<br>
+      <strong>Total de muestras</strong>: ${totalm}<br>
     </div>
   `;
   // Eliminar el resumen anterior si existe para evitar duplicados al filtrar
