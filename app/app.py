@@ -23,4 +23,6 @@ def index():
     datos = [dato[0] for dato in datos]
     return render_template('index.html', maquinas = datos)
 
-
+@app.route('/maquinas')
+def maquinas():
+    return render_template('maquinas.html')
