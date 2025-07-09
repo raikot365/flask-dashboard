@@ -12,4 +12,4 @@ RUN pip install --no-cache-dir --upgrade -r /app/requirements.txt
 
 COPY . /app
 
-CMD ["gunicorn", "-w", "4", "-b", ":8000", "app:app"]
+CMD ["gunicorn", "-w", "4", "-b", ":5000", "app:app"]

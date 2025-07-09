@@ -1,44 +1,164 @@
-{% extends "layout.html" %}
+{% extends 'layout.html' %}
+{% block title %}Dashboard{% endblock %}
 {% block body %}
-
-
-<div style="display: flex; justify-content: space-between;margin-top: 5px;margin-bottom: 5px;"> 
-  <div style="margin-left: 10px;">
-  <h3>Estado de las Máquinas</h3>
-  </div>
-
-  <a class="nav-link dropdown-toggle btn btn-secondary" data-bs-toggle="dropdown" href="#" role="button" aria-haspopup="true" aria-expanded="false" style="align-self: center; margin-right: 20px; padding: 8px;">Seleccionar Turno</a>
-    <div class="dropdown-menu">
-      <a class="dropdown-item" href="#">Mañana (7-15hs)</a>
-      <a class="dropdown-item" href="#">Tarde (15-23hs)</a>
-      <a class="dropdown-item" href="#">Noche (23-7hs)</a>
+<div class="container my-4" style="max-width: 1200px;">
+  <div class="row mb-3">
+    <div class="col-md-5">
+      <input type="date" id="datePicker" class="form-control">
+    </div>
+    <div class="col-md-5">
+      <select id="turnoSelect" class="form-select">
+        <option value="TM">Mañana (7-15hs)</option>
+        <option value="TT">Tarde (15-23hs)</option>
+        <option value="TN">Noche (23-7hs)</option>
+      </select>
+    </div>
+    <div class="col-md-2">
+      <button id="filterBtn" class="btn btn-primary w-100">Filtrar</button>
     </div>
   </div>
-  </div>
-
-<div class="contenedor" style="    
-    width: 95%;
-    max-width: 1200px;
-    margin: auto;
-    padding: 40px 0;
-    display: grid;
-    grid-template-columns: auto;">
-    <div class="contenedor-graph" style="
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 20px;">
-
-        {% for m in maquinas %}
-          <div class="card border-primary mb-3" style="max-width: 20rem;">
-          <div class="card-header"><h4 class="card-title">Máquina Nº {{ m }}</h4></div>
-          <div class="card-body">
-            
-            <p class="card-text">Aquí iría el gráfico</p>
-          </div>
-          </div>  
-        {% endfor %}
-
-  </div>
+  <div class="row" id="chartsContainer"></div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+async function loadData(date, turno) {
+  const res = await fetch(`/api/vista?date=${date}&turno=${turno}`);
+  return res.json();
+}
+
+function renderCharts(data) {
+  const container = document.getElementById('chartsContainer');
+  container.innerHTML = '';
+  const date = document.getElementById('datePicker').value;
+  const turno = document.getElementById('turnoSelect').value;
+
+  data.data.forEach(item => {
+    const col = document.createElement('div');
+    col.className = 'col-md-4 mb-4';
+    const card = document.createElement('div');
+    card.className = 'card h-100';
+    card.style.cursor = 'pointer';
+    card.addEventListener('click', () => window.location.href = `/maquina/${item.m}?date=${date}&turno=${turno}`);
+
+    const header = document.createElement('div');
+    header.className = 'card-header';
+    header.innerText = `Máquina ${item.m}`;
+
+    const body = document.createElement('div');
+    body.className = 'card-body';
+
+    const canvas = document.createElement('canvas');
+    canvas.id = `chart-${item.m}`;
+    body.appendChild(canvas);
+
+    card.appendChild(header);
+    card.appendChild(body);
+    col.appendChild(card);
+    container.appendChild(col);
+
+    // --- Variables de datos según la estructura de app.py ---
+    const onCount = item.On;          // Cantidad de muestras Encendida
+    const offCount = item.Off;        // Cantidad de muestras Apagada
+    const prodCount = item.Prod;      // Cantidad de muestras Produciendo
+    const noProdCount = item.NoProd;  // Cantidad de muestras Encendida sin producir
+    const totalSamples = item.N;      // Total de muestras para la máquina en el período
+
+    // --- Cálculos de Porcentajes ---
+    const percOn = totalSamples > 0 ? (onCount / totalSamples) * 100 : 0;
+    const percOff = totalSamples > 0 ? (offCount / totalSamples) * 100 : 0;
+    const percProd = onCount > 0 ? (prodCount / onCount) * 100 : 0;
+    const percNoProd = onCount > 0 ? (noProdCount / onCount) * 100 : 0;
+
+    // --- Cálculo de ángulos para el ajuste del gráfico exterior ---
+    const offSegmentAngle = (percOff / 100) * (2 * 180);
+    const outerChartCircumference = (percOn / 100) * (2 * 180);
+    
+    new Chart(canvas.getContext('2d'), {
+      type: 'pie',
+      data: {
+        datasets: [
+          {
+            data: [percNoProd, percProd],
+            backgroundColor: ['#f0913e', '#32a5e7'],
+            circumference: outerChartCircumference,
+            rotation: offSegmentAngle,
+            hoverBorderColor: '#808080',	
+          },
+          {
+            data: [percOff, percOn],
+            backgroundColor: ['#eb4034', '#31bd4b'],
+            circumference: 2 * 180,
+            hoverBorderColor: '#808080', 
+          }
+        ],
+        labels: ['Sin producir', 'Produciendo','Apagada', 'Encendida' ]
+      },
+      options: {
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            labels: {
+              generateLabels: function(chart) {
+                // Get the default label list
+                const original = Chart.overrides.pie.plugins.legend.labels.generateLabels;
+                const labelsOriginal = original.call(this, chart);
+
+                // Build an array of colors used in the datasets of the chart
+                let datasetColors = chart.data.datasets.map(function(e) {
+                  return e.backgroundColor;
+                });
+                datasetColors = datasetColors.flat();
+
+                // Modify the color and hide state of each label
+                labelsOriginal.forEach(label => {
+                  // There are twice as many labels as there are datasets. This converts the label index into the corresponding dataset index
+                  label.datasetIndex = (label.index - label.index % 2) / 2;
+
+                  // The hidden state must match the dataset's hidden state
+                  label.hidden = !chart.isDatasetVisible(label.datasetIndex);
+
+                  // Change the color to match the dataset
+                  label.fillStyle = datasetColors[label.index];
+                });
+
+                return labelsOriginal;
+              }
+            },
+            onClick: function(mouseEvent, legendItem, legend) {
+              // toggle the visibility of the dataset from what it currently is
+              legend.chart.getDatasetMeta(
+                legendItem.datasetIndex
+              ).hidden = legend.chart.isDatasetVisible(legendItem.datasetIndex);
+              legend.chart.update();
+            }
+          },
+          tooltip: {
+            callbacks: {
+              title: function(context) {
+                const labelIndex = (context[0].datasetIndex * 2) + context[0].dataIndex;
+                return context[0].chart.data.labels[labelIndex] + ': ' + context[0].formattedValue + '%';
+              }
+            }
+          }
+        }
+      }
+    });
+  });
+}
+
+document.getElementById('filterBtn').addEventListener('click', async () => {
+  const date = document.getElementById('datePicker').value;
+  const turno = document.getElementById('turnoSelect').value;
+  const data = await loadData(date, turno);
+  renderCharts(data);
+});
+
+window.addEventListener('DOMContentLoaded', async () => {
+  const data = await loadData('{{ initial_date }}', '{{ initial_turno }}');
+  document.getElementById('datePicker').value = '{{ initial_date }}';
+  document.getElementById('turnoSelect').value = '{{ initial_turno }}';
+  renderCharts(data);
+});
+</script>
 {% endblock %}
