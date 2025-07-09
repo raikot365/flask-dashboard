@@ -222,6 +222,7 @@ def maquina(m):
 
     datos = datos_response.json['data']
 
+
     ts   = [d["time"] for d in datos]
     enc  = [d["mOn"] for d in datos]
     prod = [d["mWo"] for d in datos]
@@ -235,3 +236,5 @@ def maquina(m):
         encendida    = enc,
         produciendo  = prod,
     )
+
+
