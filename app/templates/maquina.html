@@ -3,267 +3,283 @@
 
 {% block body %}
 <div class="container mt-4">
-  <div class="d-flex justify-content-between align-items-center mb-3">
-    <h3>Máquina Nº {{ maquina }}</h3>
-    <a id="volverBtn" class="btn btn-secondary">← Volver al Dashboard</a>
-  </div>
-  <canvas id="lineChart" height="100"></canvas>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3>Máquina Nº {{ maquina }}</h3>
+        <a id="volverBtn" class="btn btn-secondary">← Volver al Dashboard</a>
+    </div>
+    <canvas id="lineChart" height="100"></canvas>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0"></script>
 <script>
-async function fetchData() {
-  const urlParams = new URLSearchParams(window.location.search);
-  const date = urlParams.get('date');
-  const turno = urlParams.get('turno');
+  async function fetchData() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const date = urlParams.get('date');
+      const turno = urlParams.get('turno');
+      const start = urlParams.get('start');
+      const end = urlParams.get('end');
 
-  if (!date || !turno) {
-    alert('Faltan parámetros de fecha o turno');
-    return;
-  }
+      let apiUrl = `/api/maquina/{{ maquina }}?`;
+      let volverUrl = `/?`;
+      let chartTitle = `Máquina {{ maquina }}`;
 
-  document.getElementById('volverBtn').href = `/?date=${date}&turno=${turno}`;
-
-  const res = await fetch(`/api/maquina/{{ maquina }}?date=${date}&turno=${turno}`);
-  if (!res.ok) {
-    alert('No se pudo obtener los datos');
-    return;
-  }
-
-  const result = await res.json();
-  const data = result.data;
-
-  // Si no hay datos, mostrar un mensaje y salir
-  if (!data || data.length === 0) {
-    console.warn("No hay datos disponibles para la máquina en este período.");
-    const chartContainer = document.getElementById('lineChart').parentElement;
-    if (chartContainer) {
-      chartContainer.innerHTML = '<p class="text-center text-muted">No hay datos para mostrar en este período.</p>';
-    } else {
-      document.body.innerHTML = '<p class="text-center text-muted">No hay datos para mostrar en este período.</p>';
-    }
-    return;
-  }
-
-
-  const timeSeries = data.map(d => new Date(d.time));
-  const mOn = data.map(d => d.mOn);
-  const mWo = data.map(d => d.mWo);
-
-  const encendidaData = timeSeries.map((t, i) => ({ x: t, y: mOn[i] === 1 ? 1 : 0 }));
-  const produciendoData = timeSeries.map((t, i) => ({ x: t, y: mWo[i] === 1 ? 0.8 : 0 }));
-
-  // --- NUEVOS DATASETS PARA PINTAR LAS ÁREAS DE FONDO SIN PLUGIN ---
-  // La altura máxima del eje Y para que los fondos cubran todo el gráfico
-  const fullChartHeight = 1; 
-
-  // Dataset para fondo ROJO (Apagada: mOn === 0)
-  const apagadaBackgroundData = data.map(d => ({
-    x: new Date(d.time),
-    y: (d.mOn === 0) ? fullChartHeight : 0 
-  }));
-
-  // Dataset para fondo NARANJA (Encendida pero sin producir: mOn === 1 && mWo === 0)
-  const encendidaSinProducirBackgroundData = data.map(d => ({
-    x: new Date(d.time),
-    y: (d.mOn === 1 && d.mWo === 0) ? fullChartHeight : 0 
-  }));
-
-  // Dataset para fondo VERDE (Encendida y produciendo: mOn === 1 && mWo === 1)
-  const produciendoBackgroundData = data.map(d => ({
-    x: new Date(d.time),
-    y: (d.mOn === 1 && d.mWo === 1) ? fullChartHeight : 0 
-  }));
-  // --- FIN NUEVOS DATASETS ---
-
-
-  const ctx = document.getElementById('lineChart').getContext('2d');
-  
-  // Destruye el gráfico existente si lo hay para evitar duplicados al recargar datos
-  if (Chart.getChart(ctx)) {
-    Chart.getChart(ctx).destroy();
-  }
-
-  new Chart(ctx, {
-    type: 'line', // El tipo de gráfico principal sigue siendo 'line'
-    data: {
-      datasets: [
-        // --- DATASETS DE FONDO (Con 'order' más alto para que se dibujen primero, detrás de las líneas) ---
-        {
-          label: 'Fondo Apagada',
-          data: apagadaBackgroundData,
-          backgroundColor: 'rgba(255, 0, 0, 0.2)', // Rojo semitransparente
-          borderColor: 'transparent', // Sin borde
-          fill: 'origin', // Rellena desde la línea hasta el origen (Y=0)
-          stepped: true, // Cambia de color instantáneamente
-          pointRadius: 0, // Sin puntos
-          order: 3, // Se dibuja primero (más al fondo)
-          hidden: false, // Asegura que esté visible
-          pointHoverRadius: 0, // No reacciona al hover
-        },
-        {
-          label: 'Fondo Encendida sin producir',
-          data: encendidaSinProducirBackgroundData,
-          backgroundColor: 'rgba(255, 165, 0, 0.2)', // Naranja semitransparente
-          borderColor: 'transparent',
-          fill: 'origin',
-          stepped: true,
-          pointRadius: 0,
-          order: 2, // Se dibuja en segundo lugar
-          hidden: false,
-          pointHoverRadius: 0,
-        },
-        {
-          label: 'Fondo Produciendo',
-          data: produciendoBackgroundData,
-          backgroundColor: 'rgba(0, 128, 0, 0.2)', // Verde semitransparente
-          borderColor: 'transparent',
-          fill: 'origin',
-          stepped: true,
-          pointRadius: 0,
-          order: 1, // Se dibuja en tercer lugar (justo antes de las líneas principales)
-          hidden: false,
-          pointHoverRadius: 0,
-        },
-        // --- DATASETS DE LÍNEAS PRINCIPALES (Mantienen 'order: 0' por defecto para dibujarse encima) ---
-        {
-          label: 'Encendida',
-          data: encendidaData,
-          stepped: true,
-          borderColor: '#4caf50', // Verde para la línea
-          pointRadius: 0,
-          order: 0, // Se dibuja al final (más al frente)
-        },
-        {
-          label: 'Produciendo',
-          data: produciendoData,
-          stepped: true,
-          borderColor: '#2196f3', // Azul para la línea
-          pointRadius: 0,
-          order: 0, // Se dibuja al final (más al frente)
-        }
-      ]
-    },
-    options: {
-      interaction: { mode: 'index', intersect: false },
-      plugins: {
-        title: {
-          display: true,
-          text: `Máquina {{ maquina }} - Fecha ${date} - Turno ${turno}`
-        },
-        tooltip: {
-          callbacks: {
-            label: function(ctx) {
-              const y = ctx.parsed.y;
-              if (y === 1) return 'Encendida';
-              if (y === 0.8) return 'Produciendo';
-              return 'Apagada'; // O para cualquier otro valor no mapeado
-            }
+      if (start && end) {
+          apiUrl += `start=${start}&end=${end}`;
+          volverUrl += `start=${start}&end=${end}`;
+          try {
+              const startDateObj = new Date(start);
+              const endDateObj = new Date(end);
+              chartTitle += ` - Rango: ${startDateObj.toLocaleString()} a ${endDateObj.toLocaleString()}`;
+          } catch (e) {
+              chartTitle += ` - Rango: ${start} a ${end}`; // Fallback si el formato es inválido
           }
-        },
-        legend: {
-            display: true, // Mostrar la leyenda
-            labels: {
-                // Filtra las etiquetas de los datasets de fondo para que no aparezcan en la leyenda
-                filter: function(legendItem, chartData) {
-                    return !legendItem.text.startsWith('Fondo ');
-                }
-            }
-        }
-      },
-      scales: {
-        x: {
-          type: 'time',
-          time: {
-            unit: 'hour',
-            displayFormats: { hour: 'HH:mm' }
-          },
-          ticks: {
-            autoSkip: false,
-            callback: (v, i, ticks) => {
-              const d = new Date(ticks[i].value);
-              return d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
-            }
-          },
-          title: { display: true, text: 'Hora' }
-        },
-        y: {
-          min: 0,
-          max: 1.1,
-          ticks: {
-            callback: v => {
-              if (v === 1) return 'Encendida';
-              if (v === 0.8) return 'Produciendo';
-              if (v === 0) return 'Apagada';
-              return '';
-            }
-          },
-          title: { display: true, text: 'Estado' }
-        }
+      } else if (date && turno) {
+          apiUrl += `date=${date}&turno=${turno}`;
+          volverUrl += `date=${date}&turno=${turno}`;
+          chartTitle += ` - Fecha ${date} - Turno ${turno}`;
+      } else {
+          alert('Faltan parámetros de fecha y hora o turno');
+          return;
       }
-    }
-  });
 
-  // Resumen textual
-  const resumen = { encendida: 0, produciendo: 0, apagada: 0 };
-  data.forEach(d => {
-    if (d.mOn === 0) resumen.apagada++;
-    else if (d.mWo === 1) resumen.produciendo++;
-    else resumen.encendida++;
-  });
+      document.getElementById('volverBtn').href = volverUrl;
 
-  data[0].date
+      const res = await fetch(apiUrl);
+      if (!res.ok) {
+          alert('No se pudo obtener los datos');
+          return;
+      }
 
-  const totalm = data.length;
-  const totalMin = totalm * 3;
-  const crearLinea = (nombre, valor) => {
-    const min = valor * 3;
-    const pct = ((min / totalMin) * 100).toFixed(1);
-    return `<strong>${nombre}</strong>: ${min} min (${pct}%)`;
-  };
+      const result = await res.json();
+      const data = result.data;
 
-  const fechaIniFormateada = timeSeries[0].toLocaleString('es-AR', {
-  weekday: 'long',
-  day: '2-digit',
-  month: 'long',
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-  timeZoneName: 'long'
-  });
+      // Si no hay datos, mostrar un mensaje y salir
+      if (!data || data.length === 0) {
+          console.warn("No hay datos disponibles para la máquina en este período.");
+          const chartContainer = document.getElementById('lineChart').parentElement;
+          if (chartContainer) {
+              chartContainer.innerHTML = '<p class="text-center text-muted">No hay datos para mostrar en este período.</p>';
+          } else {
+              document.body.innerHTML = '<p class="text-center text-muted">No hay datos para mostrar en este período.</p>';
+          }
+          return;
+      }
 
-  const fechaFinFormateada = timeSeries[data.length-1].toLocaleString('es-AR', {
-  weekday: 'long',
-  day: '2-digit',
-  month: 'long',
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-  timeZoneName: 'long'
-  });
+      const timeSeries = data.map(d => new Date(d.time));
+      const mOn = data.map(d => d.mOn);
+      const mWo = data.map(d => d.mWo);
 
-  const resumenHTML = `
-    <div class="alert alert-light mt-4">
-      <h5 class="mb-2">Resumen del turno:</h5>
-      ${crearLinea('Produciendo', resumen.produciendo)}<br>
-      ${crearLinea('Encendida sin producir', resumen.encendida)}<br>
-      ${crearLinea('Apagada', resumen.apagada)}<br>
-      <strong>Primer muestra</strong>: ${fechaIniFormateada}<br>
-      <strong>Ultima muestra</strong>: ${fechaFinFormateada}<br>
-      <strong>Total de muestras</strong>: ${totalm}<br>
-    </div>
-  `;
-  // Eliminar el resumen anterior si existe para evitar duplicados al filtrar
-  const oldResumen = document.querySelector(".container > .alert");
-  if (oldResumen) {
-    oldResumen.remove();
+      const encendidaData = timeSeries.map((t, i) => ({ x: t, y: mOn[i] === 1 ? 1 : 0 }));
+      const produciendoData = timeSeries.map((t, i) => ({ x: t, y: mWo[i] === 1 ? 0.8 : 0 }));
+
+      // --- NUEVOS DATASETS PARA PINTAR LAS ÁREAS DE FONDO SIN PLUGIN ---
+      // La altura máxima del eje Y para que los fondos cubran todo el gráfico
+      // Ajustado a 1.1 para que ocupe todo el espacio visible del chart.
+      const fullChartHeight = 1.1;
+
+      // Dataset para fondo ROJO (Apagada: mOn === 0)
+      const apagadaBackgroundData = data.map(d => ({
+          x: new Date(d.time),
+          y: (d.mOn === 0) ? fullChartHeight : 0
+      }));
+
+      // Dataset para fondo NARANJA (Encendida pero sin producir: mOn === 1 && mWo === 0)
+      const encendidaSinProducirBackgroundData = data.map(d => ({
+          x: new Date(d.time),
+          y: (d.mOn === 1 && d.mWo === 0) ? fullChartHeight : 0
+      }));
+
+      // Dataset para fondo VERDE (Encendida y produciendo: mOn === 1 && mWo === 1)
+      const produciendoBackgroundData = data.map(d => ({
+          x: new Date(d.time),
+          y: (d.mOn === 1 && d.mWo === 1) ? fullChartHeight : 0
+      }));
+      // --- FIN NUEVOS DATASETS ---
+
+
+      const ctx = document.getElementById('lineChart').getContext('2d');
+
+      // Destruye el gráfico existente si lo hay para evitar duplicados al recargar datos
+      if (Chart.getChart(ctx)) {
+          Chart.getChart(ctx).destroy();
+      }
+
+      new Chart(ctx, {
+          type: 'line', // El tipo de gráfico principal sigue siendo 'line'
+          data: {
+              datasets: [
+                  // --- DATASETS DE FONDO (Con 'order' más alto para que se dibujen primero, detrás de las líneas) ---
+                  {
+                      label: 'Fondo Apagada',
+                      data: apagadaBackgroundData,
+                      backgroundColor: 'rgba(255, 0, 0, 0.2)', // Rojo semitransparente
+                      borderColor: 'transparent', // Sin borde
+                      fill: 'origin', // Rellena desde la línea hasta el origen (Y=0)
+                      stepped: true, // Cambia de color instantáneamente
+                      pointRadius: 0, // Sin puntos
+                      order: 3, // Se dibuja primero (más al fondo)
+                      hidden: false, // Asegura que esté visible
+                      pointHoverRadius: 0, // No reacciona al hover
+                  },
+                  {
+                      label: 'Fondo Encendida sin producir',
+                      data: encendidaSinProducirBackgroundData,
+                      backgroundColor: 'rgba(255, 165, 0, 0.2)', // Naranja semitransparente
+                      borderColor: 'transparent',
+                      fill: 'origin',
+                      stepped: true,
+                      pointRadius: 0,
+                      order: 2, // Se dibuja en segundo lugar
+                      hidden: false,
+                      pointHoverRadius: 0,
+                  },
+                  {
+                      label: 'Fondo Produciendo',
+                      data: produciendoBackgroundData,
+                      backgroundColor: 'rgba(0, 128, 0, 0.2)', // Verde semitransparente
+                      borderColor: 'transparent',
+                      fill: 'origin',
+                      stepped: true,
+                      pointRadius: 0,
+                      order: 1, // Se dibuja en tercer lugar (justo antes de las líneas principales)
+                      hidden: false,
+                      pointHoverRadius: 0,
+                  },
+                  // --- DATASETS DE LÍNEAS PRINCIPALES (Mantienen 'order: 0' por defecto para dibujarse encima) ---
+                  {
+                      label: 'Encendida',
+                      data: encendidaData,
+                      stepped: true,
+                      borderColor: '#4caf50', // Verde para la línea
+                      pointRadius: 0,
+                      order: 0, // Se dibuja al final (más al frente)
+                  },
+                  {
+                      label: 'Produciendo',
+                      data: produciendoData,
+                      stepped: true,
+                      borderColor: '#2196f3', // Azul para la línea
+                      pointRadius: 0,
+                      order: 0, // Se dibuja al final (más al frente)
+                  }
+              ]
+          },
+          options: {
+              interaction: { mode: 'index', intersect: false },
+              plugins: {
+                  title: {
+                      display: true,
+                      text: chartTitle // Usa el título dinámico
+                  },
+                  tooltip: {
+                      callbacks: {
+                          label: function(ctx) {
+                              const y = ctx.parsed.y;
+                              if (y === 1) return 'Encendida';
+                              if (y === 0.8) return 'Produciendo';
+                              return 'Apagada'; // O para cualquier otro valor no mapeado
+                          }
+                      }
+                  },
+                  legend: {
+                      display: true, // Mostrar la leyenda
+                      labels: {
+                          // Filtra las etiquetas de los datasets de fondo para que no aparezcan en la leyenda
+                          filter: function(legendItem, chartData) {
+                              return !legendItem.text.startsWith('Fondo ');
+                          }
+                      }
+                  }
+              },
+              scales: {
+                  x: {
+                      type: 'time',
+                      time: {
+                          unit: 'hour',
+                          displayFormats: { hour: 'HH:mm' }
+                      },
+                      ticks: {
+                          autoSkip: false,
+                          callback: (v, i, ticks) => {
+                              const d = new Date(ticks[i].value);
+                              return d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+                          }
+                      },
+                      title: { display: true, text: 'Hora' }
+                  },
+                  y: {
+                      min: 0,
+                      max: 1.1,
+                      ticks: {
+                          callback: v => {
+                              if (v === 1) return 'Encendida';
+                              if (v === 0.8) return 'Produciendo';
+                              if (v === 0) return 'Apagada';
+                              return '';
+                          }
+                      },
+                      title: { display: true, text: 'Estado' }
+                  }
+              }
+          }
+      });
+
+      // Resumen textual
+      const resumen = { encendida: 0, produciendo: 0, apagada: 0 };
+      data.forEach(d => {
+          if (d.mOn === 0) resumen.apagada++;
+          else if (d.mWo === 1) resumen.produciendo++;
+          else resumen.encendida++;
+      });
+
+      const totalm = data.length;
+      const totalMin = totalm * 3;
+      const crearLinea = (nombre, valor) => {
+          const min = valor * 3;
+          const pct = ((min / totalMin) * 100).toFixed(1);
+          return `<strong>${nombre}</strong>: ${min} min (${pct}%)`;
+      };
+
+      const fechaIniFormateada = timeSeries[0].toLocaleString('es-AR', {
+          weekday: 'long',
+          day: '2-digit',
+          month: 'long',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          timeZoneName: 'long'
+      });
+
+      const fechaFinFormateada = timeSeries[data.length - 1].toLocaleString('es-AR', {
+          weekday: 'long',
+          day: '2-digit',
+          month: 'long',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          timeZoneName: 'long'
+      });
+
+      const resumenHTML = `
+          <div class="alert alert-light mt-4">
+              <h5 class="mb-2">Resumen del turno:</h5>
+              ${crearLinea('Produciendo', resumen.produciendo)}<br>
+              ${crearLinea('Encendida sin producir', resumen.encendida)}<br>
+              ${crearLinea('Apagada', resumen.apagada)}<br>
+              <strong>Primer muestra</strong>: ${fechaIniFormateada}<br>
+              <strong>Ultima muestra</strong>: ${fechaFinFormateada}<br>
+              <strong>Total de muestras</strong>: ${totalm}<br>
+          </div>
+      `;
+      // Eliminar el resumen anterior si existe para evitar duplicados al filtrar
+      const oldResumen = document.querySelector(".container > .alert");
+      if (oldResumen) {
+          oldResumen.remove();
+      }
+      document.querySelector(".container").insertAdjacentHTML("beforeend", resumenHTML);
   }
-  document.querySelector(".container").insertAdjacentHTML("beforeend", resumenHTML);
-}
 
-document.addEventListener('DOMContentLoaded', fetchData);
+  document.addEventListener('DOMContentLoaded', fetchData);
 </script>
-
-
 {% endblock %}
