@@ -237,4 +237,52 @@ def maquina(m):
         produciendo  = prod,
     )
 
+# --------------------------------------------------------------------------
+# maquinas en detalle con Chart.js 
+# --------------------------------------------------------------------------
 
+@app.route("/maquinas", methods=["GET"])
+def maquinas():
+    '''Esto es una copia de la otra vista para hacer funcionar
+    los graficos pero habría que cambiar para el nuevo gráfico y
+    la consulta'''
+    date  = request.args.get("date")
+    turno = request.args.get("turno")
+    if not date or not turno:
+        return redirect(url_for("index"))
+
+    
+    eng = get_engine()
+    shifts = {'TM': ("07:00:00","15:00:00"),
+              'TT': ("15:00:00","23:00:00"),
+              'TN': ("23:00:00","07:00:00")}
+    if turno not in shifts:
+        return redirect(url_for("index"))
+
+    d = datetime.strptime(date, "%Y-%m-%d").date()
+    start_time_str = shifts[turno][0]
+    end_time_str = shifts[turno][1]
+    start_naive_local = datetime.combine(d, datetime.strptime(start_time_str, "%H:%M:%S").time())
+    if turno == 'TN':
+        end_naive_local = datetime.combine(d + timedelta(days=1), datetime.strptime(end_time_str, "%H:%M:%S").time())
+    else:
+        end_naive_local = datetime.combine(d, datetime.strptime(end_time_str, "%H:%M:%S").time())
+    start_aware_local = argentina_tz.localize(start_naive_local)
+    end_aware_local = argentina_tz.localize(end_naive_local)
+    start_utc = start_aware_local.astimezone(utc_tz)
+    end_utc = end_aware_local.astimezone(utc_tz)
+
+    with eng.connect() as c:
+        rows = c.execute(text("""
+            SELECT DISTINCT m FROM registros
+            WHERE time >= :s AND time < :e
+            ORDER BY m
+        """), {"s": start_utc, "e": end_utc}).fetchall()
+    maquinas = [row[0] for row in rows]
+
+    return render_template(
+        "maquinas.html",
+        maquinas=maquinas,
+        date=date,
+        turno=turno
+    )
