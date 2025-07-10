@@ -41,12 +41,22 @@ app = Flask(__name__)
 @app.route("/")
 def index():
     eng = get_engine()
+
     initial_date = request.args.get("date")
     initial_turno = request.args.get("turno")
 
-    # si no hay argumento de fecha
-    if not initial_date:
-        # obtener la última fecha y turno con datos de la Vista
+    initial_start = request.args.get("start")
+    initial_end = request.args.get("end")
+
+    # Caso 1: Si se proporciona un rango personalizado (start y end), priorizamos este.
+    if initial_start and initial_end:
+        # Limpiamos initial_date y initial_turno para evitar conflictos con el rango.
+        # Se establecen a None temporalmente para luego convertirlos a ""
+        initial_date = None
+        initial_turno = None
+    # Caso 2: Si no se proporciona fecha/turno específicos NI un rango, volvemos al comportamiento por defecto.
+    # Es decir, buscar la última fecha y turno con datos en la Vista.
+    elif not initial_date and not initial_turno:
         with eng.connect() as c:
             last = c.execute(text("""
                 SELECT fecha, Turno
@@ -54,16 +64,43 @@ def index():
                 ORDER BY fecha DESC, FIELD(Turno,'TM','TT','TN')
                 LIMIT 1
             """)).mappings().first()
-        
+
         if last:
             initial_date = last["fecha"].strftime("%Y-%m-%d")
             initial_turno = last["Turno"]
         else:
-            # Fallback si la Vista está vacía, usa la fecha actual y TM
+            # Fallback si la Vista está vacía, usa la fecha actual y el turno 'TM'.
             initial_date = datetime.now(LOCAL_TZ).strftime("%Y-%m-%d")
             initial_turno = 'TM'
-    
-    return render_template("index.html", initial_date=initial_date, initial_turno=initial_turno)
+        
+        # Aseguramos que los parámetros de rango estén explícitamente en cadenas vacías
+        # cuando se usa una fecha/turno único o se defaultea a una fecha/turno.
+        initial_start = ""
+        initial_end = ""
+    # Caso 3: Si se proporciona una fecha/turno específico (pero no un rango).
+    else:
+        # Aseguramos que los parámetros de rango estén explícitamente en cadenas vacías.
+        initial_start = ""
+        initial_end = ""
+
+    # Finalmente, aseguramos que cualquier variable que sea None se convierta a una cadena vacía
+    # antes de pasarla a la plantilla, para facilitar el manejo en JavaScript.
+    if initial_date is None:
+        initial_date = ""
+    if initial_turno is None:
+        initial_turno = ""
+    if initial_start is None:
+        initial_start = ""
+    if initial_end is None:
+        initial_end = ""
+
+    return render_template(
+        "index.html",
+        initial_date=initial_date,
+        initial_turno=initial_turno,
+        initial_start=initial_start, # Se pasan a la plantilla como "" si no están presentes
+        initial_end=initial_end      # Se pasan a la plantilla como "" si no están presentes
+    )
 
 # --- Configuración de zona horaria ---
 argentina_tz = pytz.timezone('America/Argentina/Buenos_Aires')
@@ -74,47 +111,53 @@ utc_tz = pytz.timezone('UTC')
 # --------------------------------------------------------------------------
 @app.route("/api/vista")
 def api_vista():
-    selected_date = request.args.get("date")
-    selected_turno = request.args.get("turno")
     eng = get_engine()
+    args = request.args
 
-    shifts = {
-        'TM': ("07:00:00", "15:00:00"),
-        'TT': ("15:00:00", "23:00:00"),
-        'TN': ("23:00:00", "07:00:00")
-    }
+    # Modo nuevo: consulta libre por rango de fechas y horas
+    if "start" in args and "end" in args:
+        try:
+            start = datetime.fromisoformat(args["start"])
+            end   = datetime.fromisoformat(args["end"])
+        except ValueError:
+            abort(400, "Formato de fecha/hora inválido")
 
-    # Determinar fecha/turno por defecto si no vienen
-    if not selected_date or not selected_turno:
-        with eng.connect() as c:
-            last = c.execute(text("""
-                SELECT fecha, Turno
-                FROM Vista
-                ORDER BY fecha DESC, FIELD(Turno,'TM','TT','TN')
-                LIMIT 1
-            """)).mappings().first()
-        if last:
-            selected_date = last["fecha"].strftime("%Y-%m-%d")
-            selected_turno = last["Turno"]
-        else:
-            selected_date = datetime.now(LOCAL_TZ).strftime("%Y-%m-%d")
-            selected_turno = 'TM'
+        # Asegurar zona horaria local y convertir a UTC
+        if start.tzinfo is None:
+            start = argentina_tz.localize(start)
+        if end.tzinfo is None:
+            end = argentina_tz.localize(end)
 
-    if selected_turno not in shifts:
-        abort(400, "Turno inválido")
+        start_utc = start.astimezone(utc_tz)
+        end_utc   = end.astimezone(utc_tz)
 
-    # Calcular rangos UTC
-    d = datetime.strptime(selected_date, "%Y-%m-%d").date()
-    start_naive = datetime.combine(d, datetime.strptime(shifts[selected_turno][0], "%H:%M:%S").time())
-    end_day = d + timedelta(days=1) if selected_turno == 'TN' else d
-    end_naive = datetime.combine(end_day, datetime.strptime(shifts[selected_turno][1], "%H:%M:%S").time())
+        label = f"{start.strftime('%Y-%m-%d %H:%M')} \u2192 {end.strftime('%Y-%m-%d %H:%M')}"
+    
+    else:
+        # Modo tradicional: por fecha y turno
+        selected_date = args.get("date")
+        selected_turno = args.get("turno")
+        shifts = {
+            'TM': ("07:00:00", "15:00:00"),
+            'TT': ("15:00:00", "23:00:00"),
+            'TN': ("23:00:00", "07:00:00")
+        }
 
-    start_local = argentina_tz.localize(start_naive)
-    end_local   = argentina_tz.localize(end_naive)
-    start_utc   = start_local.astimezone(utc_tz)
-    end_utc     = end_local.astimezone(utc_tz)
+        if not selected_date or not selected_turno or selected_turno not in shifts:
+            abort(400, "Faltan fecha y turno válidos")
 
-    # Leer muestras del turno
+        d = datetime.strptime(selected_date, "%Y-%m-%d").date()
+        start_naive = datetime.combine(d, datetime.strptime(shifts[selected_turno][0], "%H:%M:%S").time())
+        end_day = d + timedelta(days=1) if selected_turno == 'TN' else d
+        end_naive = datetime.combine(end_day, datetime.strptime(shifts[selected_turno][1], "%H:%M:%S").time())
+
+        start_local = argentina_tz.localize(start_naive)
+        end_local   = argentina_tz.localize(end_naive)
+        start_utc = start_local.astimezone(utc_tz)
+        end_utc   = end_local.astimezone(utc_tz)
+        label = f"{selected_date} - Turno {selected_turno}"
+
+    # Consulta SQL entre start_utc y end_utc
     raw_df = pd.read_sql(
         text("""
             SELECT m, mOn, mWo
@@ -125,16 +168,15 @@ def api_vista():
     )
 
     if raw_df.empty:
-        return jsonify({"date": selected_date, "turno": selected_turno, "data": []})
+        return jsonify({"data": [], "label": label})
 
-    # Recuento simple de muestras
     results = []
     for machine_id, df_m in raw_df.groupby('m'):
-        total      = len(df_m)
-        on_count   = int(df_m['mOn'].sum())                     # encendida
-        off_count  = total - on_count                           # apagada
-        wo_count   = int(df_m[df_m['mOn'] == 1]['mWo'].sum())    # produciendo
-        nwo_count  = on_count - wo_count                        # encendida sin producir
+        total = len(df_m)
+        on_count = int(df_m['mOn'].sum())
+        off_count = total - on_count
+        wo_count = int(df_m[df_m['mOn'] == 1]['mWo'].sum())
+        nwo_count = on_count - wo_count
 
         results.append({
             "m": machine_id,
@@ -146,9 +188,8 @@ def api_vista():
         })
 
     return jsonify({
-        "date": selected_date,
-        "turno": selected_turno,
-        "data": results
+        "data": results,
+        "label": label
     })
     
     
@@ -159,31 +200,43 @@ def api_vista():
 def api_maquina(m):
     date  = request.args.get("date")
     turno = request.args.get("turno")
-    if not date or not turno:
-        abort(400, "Faltan fecha y turno")
+    start_str = request.args.get("start")
+    end_str   = request.args.get("end")
 
-    shifts = {'TM': ("07:00:00","15:00:00"),
-              'TT': ("15:00:00","23:00:00"),
-              'TN': ("23:00:00","07:00:00")}
-    if turno not in shifts:
-        abort(400, "Turno inválido")
+    # Si se proporcionan parámetros start y end → consulta personalizada
+    if start_str and end_str:
+        try:
+            start_local = datetime.fromisoformat(start_str)
+            end_local   = datetime.fromisoformat(end_str)
+            
+            # Localizar la fecha/hora sin información de zona horaria como Argentina
+            if start_local.tzinfo is None:
+                start_local = argentina_tz.localize(start_local)
+            if end_local.tzinfo is None:
+                end_local = argentina_tz.localize(end_local)
 
-    d = datetime.strptime(date, "%Y-%m-%d").date()
-
-    start_time_str = shifts[turno][0]
-    end_time_str = shifts[turno][1]
-
-    start_naive_local = datetime.combine(d, datetime.strptime(start_time_str, "%H:%M:%S").time())
-    if turno == 'TN':
-        end_naive_local = datetime.combine(d + timedelta(days=1), datetime.strptime(end_time_str, "%H:%M:%S").time())
+        except Exception as e:
+            abort(400, f"Formato de fecha inválido: {e}")
+    elif date and turno:
+        shifts = {
+            'TM': ("07:00:00", "15:00:00"),
+            'TT': ("15:00:00", "23:00:00"),
+            'TN': ("23:00:00", "07:00:00")
+        }
+        if turno not in shifts:
+            abort(400, "Turno inválido")
+        
+        d = datetime.strptime(date, "%Y-%m-%d").date()
+        start_naive = datetime.combine(d, datetime.strptime(shifts[turno][0], "%H:%M:%S").time())
+        end_day = d + timedelta(days=1) if turno == 'TN' else d
+        end_naive = datetime.combine(end_day, datetime.strptime(shifts[turno][1], "%H:%M:%S").time())
+        start_local = argentina_tz.localize(start_naive)
+        end_local   = argentina_tz.localize(end_naive)
     else:
-        end_naive_local = datetime.combine(d, datetime.strptime(end_time_str, "%H:%M:%S").time())
+        abort(400, "Faltan parámetros")
 
-    start_aware_local = argentina_tz.localize(start_naive_local)
-    end_aware_local = argentina_tz.localize(end_naive_local)
-
-    start_utc = start_aware_local.astimezone(utc_tz)
-    end_utc = end_aware_local.astimezone(utc_tz)
+    start_utc = start_local.astimezone(utc_tz)
+    end_utc   = end_local.astimezone(utc_tz)
 
     eng = get_engine()
     with eng.connect() as c:
@@ -198,43 +251,38 @@ def api_maquina(m):
         )
 
     if df.empty:
-        return jsonify({"maquina": m, "date": date, "turno": turno, "data": []})
+        return jsonify({"maquina": m, "data": []})
 
+    # pd.to_datetime ya infiere TZ si es ambigua con 'infer', y se convierte a la TZ local.
     df["time"] = pd.to_datetime(df["time"]).dt.tz_localize(utc_tz, ambiguous='infer', nonexistent='shift_forward') \
                                          .dt.tz_convert(argentina_tz) \
                                          .apply(lambda x: x.isoformat())
     
-    return jsonify({"maquina": m, "date": date, "turno": turno, "data": df.to_dict("records")})
+    return jsonify({"maquina": m, "data": df.to_dict("records")})
 
 # --------------------------------------------------------------------------
 # maquina en detalle con Chart.js 
 # --------------------------------------------------------------------------
 @app.route("/maquina/<int:m>")
 def maquina(m):
-    date  = request.args.get("date")
-    turno = request.args.get("turno")
-    if not date or not turno:
+    # Obtener todos los parámetros posibles de la URL
+    date_param = request.args.get("date")
+    turno_param = request.args.get("turno")
+    start_param = request.args.get("start")
+    end_param = request.args.get("end")
+
+    # Validar que al menos un conjunto de parámetros esté presente
+    if not ((date_param and turno_param) or (start_param and end_param)):
+        # Si no hay parámetros válidos, redirigir al índice
         return redirect(url_for("index"))
-
-    datos_response = api_maquina(m)
-    if datos_response.status_code != 200:
-        return redirect(url_for("index"))
-
-    datos = datos_response.json['data']
-
-
-    ts   = [d["time"] for d in datos]
-    enc  = [d["mOn"] for d in datos]
-    prod = [d["mWo"] for d in datos]
 
     return render_template(
         "maquina.html",
-        maquina      = m,
-        date         = date,
-        turno        = turno,
-        timestamps   = ts,
-        encendida    = enc,
-        produciendo  = prod,
+        maquina=m,
+        # Pasa los parámetros tal cual fueron recibidos a la plantilla
+        # El JS en maquina.html se encargará de usarlos para la API y la UI
+        date=date_param,
+        turno=turno_param,
+        start=start_param,
+        end=end_param,
     )
-
-
