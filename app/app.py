@@ -2,9 +2,11 @@ import os
 from datetime import datetime, timedelta, timezone
 import pytz
 
-from flask import Flask, render_template, request, jsonify, abort, redirect, url_for
+from flask import Flask, render_template, request, jsonify, abort, redirect, url_for, session
 import pandas as pd
 from sqlalchemy import create_engine, text
+from functools import wraps
+from werkzeug.security import check_password_hash, generate_password_hash
 
 # --------------------------------------------------------------------------
 # Config & helpers
@@ -36,9 +38,100 @@ def get_engine():
 # --------------------------------------------------------------------------
 # Flask app
 # --------------------------------------------------------------------------
+
+
 app = Flask(__name__)
 
+app.secret_key = os.environ["FLASK_SECRET_KEY"]
+app.config['PERMANENT_SESSION_LIFETIME']=3600
+
+# --------------------------------------------------------------------------
+# Menejo del login
+# --------------------------------------------------------------------------
+def require_login(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if session.get("user_id") is None:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+# --------------------------------------------------------------------------
+# Registro
+# --------------------------------------------------------------------------
+
+@app.route("/registrar", methods=["GET", "POST"])
+def registrar():
+    """Registrar usuario"""
+    if request.method == "POST":
+
+        # Ensure username was submitted
+        if not request.form.get("usuario"):
+            return "el campo usuario es oblicatorio"
+
+        # Ensure password was submitted
+        elif not request.form.get("password"):
+            return "el campo contraseña es oblicatorio"
+
+        passhash = generate_password_hash(request.form.get("password"), method='scrypt', salt_length=16)
+        eng = get_engine()
+        with eng.connect() as conn:
+            result = conn.execute(
+                text("INSERT INTO usuarios (usuario, hash) VALUES (:usuario, :hash)"),
+                {"usuario": request.form.get("usuario"), "hash": passhash[17:]}
+            )
+            conn.commit()
+        return redirect(url_for('index'))
+
+    return render_template('registrar.html')
+
+# --------------------------------------------------------------------------
+# Login
+# --------------------------------------------------------------------------
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        # Ensure username was submitted
+        if not request.form.get("usuario"):
+            return "el campo usuario es oblicatorio"
+        # Ensure password was submitted
+        elif not request.form.get("password"):
+            return "el campo contraseña es oblicatorio"
+        eng = get_engine()
+        with eng.connect() as conn:
+            result = conn.execute(
+                text("SELECT * FROM usuarios WHERE usuario LIKE :usuario"),
+                {"usuario": request.form.get("usuario")}
+            )
+            row = result.fetchone()
+        if row:
+            if (check_password_hash('scrypt:32768:8:1$' + row[2], request.form.get("password"))):
+                session.permanent = True
+                session["user_id"] = request.form.get("usuario")
+                return redirect(url_for('index'))
+            else:
+                return redirect(url_for('login'))
+    return render_template('login.html')
+
+
+# --------------------------------------------------------------------------
+# Logout
+# --------------------------------------------------------------------------
+
+@app.route("/logout")
+@require_login
+def logout():
+    session.clear()
+    # logging.info("el usuario {} cerró su sesión".format(session.get("user_id")))
+    return redirect(url_for('index'))
+
+
+
+
 @app.route("/")
+@require_login
 def index():
     eng = get_engine()
 
@@ -110,6 +203,7 @@ utc_tz = pytz.timezone('UTC')
 # grafico torta 
 # --------------------------------------------------------------------------
 @app.route("/api/vista")
+@require_login
 def api_vista():
     eng = get_engine()
     args = request.args
@@ -264,6 +358,7 @@ def api_maquina(m):
 # maquina en detalle con Chart.js 
 # --------------------------------------------------------------------------
 @app.route("/maquina/<int:m>")
+@require_login
 def maquina(m):
     # Obtener todos los parámetros posibles de la URL
     date_param = request.args.get("date")
