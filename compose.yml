@@ -35,6 +35,7 @@ services:
       - DB_PASS=${DB_PASS}
       - MYSQL_DB=${MYSQL_DB}
       - MARIADB_HOST=${MARIADB_HOST}
+      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY}
     ports:
       - 5000:5000
     restart: unless-stopped
