@@ -15,6 +15,7 @@
     <div class="container-fluid">
       <a class="navbar-brand" href="{{ url_for('index') }}"><i class="bi bi-pie-chart-fill"></i> DASHBOARD</a>
       <button class="btn btn-secondary ms-auto me-3" onclick="change_theme()">Toggle Tema</button>
+      <a href="{{url_for('descargar')}}" class="btn btn-secondary my-2 my-sm-0 me-3" type="submit">Descarga</a>
       {% if session.get("user_id") %}
       <a href="{{url_for('logout')}}" class="btn btn-secondary my-2 my-sm-0" type="submit">Salir</a>
       {% endif %}

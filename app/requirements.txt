@@ -5,3 +5,4 @@ pymysql
 SQLAlchemy
 pandas
 pytz
+xlsxwriter

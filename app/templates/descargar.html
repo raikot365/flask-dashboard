@@ -1,0 +1,102 @@
+{% extends 'layout.html' %}
+{% block title %}Descarga{% endblock %}
+{% block body %}
+
+<div class="container py-4">
+    <div class="row mb-4 g-4 align-items-end">
+        <div class="col-md-3">
+            <label for="startDate" class="form-label" style="margin-left: 5px;">Fecha y hora inicio</label>
+            <input type="datetime-local" id="startDate" class="form-control shadow-sm" value="{{ initial_start | default('') }}">
+        </div>
+        <div class="col-md-3">
+            <label for="endDate" class="form-label" style="margin-left: 5px;">Fecha y hora fin</label>
+            <input type="datetime-local" id="endDate" class="form-control shadow-sm" value="{{ initial_end | default('') }}">
+        </div>
+        <div class="col-md-3">
+            <label for="maquinaSelect" class="form-label" style="margin-left: 5px;">Máquinas</label>
+            <select id="maquinaSelect" class="form-select shadow-sm">
+                <option value="todas">Todas</option>
+                {% for maquina in maquinas %}
+                    <option value="{{ maquina }}">{{ maquina }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    <div class="col-md-3">
+            <button id="customRangeBtn" class="btn btn-outline-primary w-100"></i> Seleccionar</button>
+        </div>
+    </div>
+    <div id="rangoMsg" class="alert alert-info d-none" role="alert">
+        <i class="bi bi-info-circle"></i> Selección actual
+    </div>
+
+    <div class="d-flex justify-content mb-3">
+        <a id="btn-descargar-xls" class="btn btn-success shadow" href="#">
+            <i class="bi bi-file-earmark-excel"></i> Descargar Excel
+        </a>
+    </div>
+</div>
+
+
+<script>
+    // Función para descargar el Excel según los parámetros actuales
+    function descargarExcel(params) {
+        const query = new URLSearchParams(params).toString();
+        window.location.href = `/api/xls?${query}`;
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        const btnDescargar = document.getElementById('btn-descargar-xls');
+        const btnRango = document.getElementById('customRangeBtn');
+        const rangoMsg = document.getElementById('rangoMsg');
+        const startInput = document.getElementById('startDate');
+        const endInput = document.getElementById('endDate');
+        const maquinaSelectElem = document.getElementById('maquinaSelect');
+
+        // Mostrar mensaje cuando se selecciona un rango válido
+        btnRango.addEventListener('click', function(e) {
+            e.preventDefault();
+            const start = startInput.value;
+            const end = endInput.value;
+            const maquina = maquinaSelectElem.value;
+            if (start && end) {
+                rangoMsg.classList.remove('d-none');
+                rangoMsg.classList.add('show');
+                rangoMsg.innerHTML = '<i class="bi bi-info-circle"></i> Selección actual: <strong>' + start.replace('T',' ') + '</strong> a <strong>' + end.replace('T',' ') + '</strong> para <strong>'+ maquina.replace() + '</strong>';
+            } else {
+                rangoMsg.classList.add('d-none');
+            }
+        });
+
+        // Botón de descarga Excel
+        btnDescargar.addEventListener('click', function(e) {
+            e.preventDefault();
+            const start = startInput.value;
+            const end = endInput.value;
+            const maquina = maquinaSelectElem.value;
+            let params = {};
+            if (start && end) {
+                params = { start, end, maquina};
+            } else {
+                // Si hay selectores de fecha/turno, puedes agregarlos aquí si existen en el HTML
+                const datePicker = document.getElementById('datePicker');
+                const turnoSelect = document.getElementById('turnoSelect');
+                if (datePicker && turnoSelect) {
+                    const date = datePicker.value;
+                    const turno = turnoSelect.value;
+                    if (date && turno) {
+                        params = { date, turno, maquina };
+                    } else {
+                        alert('Por favor completá los campos requeridos.');
+                        return;
+                    }
+                } else {
+                    alert('Por favor completá los campos requeridos.');
+                    return;
+                }
+            }
+            descargarExcel(params);
+        });
+    });
+</script>
+
+{% endblock %}
