@@ -2,12 +2,13 @@ import os
 from datetime import datetime, timedelta, timezone
 import pytz
 
-from flask import Flask, render_template, request, jsonify, abort, redirect, url_for, session
+from flask import Flask, render_template, request, jsonify, abort, redirect, url_for, session, send_file
 import pandas as pd
 from sqlalchemy import create_engine, text
 from functools import wraps
 from werkzeug.security import check_password_hash, generate_password_hash
-
+import io
+from xlsxwriter import Workbook
 # --------------------------------------------------------------------------
 # Config & helpers
 # --------------------------------------------------------------------------
@@ -430,4 +431,109 @@ def maquinas():
         maquinas=maquinas,
         date=date,
         turno=turno
+    )
+
+# --------------------------------------------------------------------------
+# Exportar vista a Excel
+# --------------------------------------------------------------------------
+
+
+@app.route("/descargar")
+@require_login
+def descargar():
+    eng = get_engine()
+    with eng.connect() as c:
+        rows = c.execute(text("""
+            SELECT DISTINCT m FROM registros
+        """)).fetchall()
+
+    maquinas = [row[0] for row in rows]
+
+    return render_template("descargar.html", maquinas=maquinas,initial_date="", initial_turno="", initial_start="", initial_end="")
+
+
+@app.route("/api/xls")
+@require_login
+def descargar_xls():
+    eng = get_engine()
+    args = request.args
+
+    # Modo nuevo: consulta libre por rango de fechas y horas
+    if "start" in args and "end" in args:
+        try:
+            start = datetime.fromisoformat(args["start"])
+            end   = datetime.fromisoformat(args["end"])
+        except ValueError:
+            abort(400, "Formato de fecha/hora inválido")
+
+        # Asegurar zona horaria local y convertir a UTC
+        if start.tzinfo is None:
+            start = argentina_tz.localize(start)
+        if end.tzinfo is None:
+            end = argentina_tz.localize(end)
+
+        start_utc = start.astimezone(utc_tz)
+        end_utc   = end.astimezone(utc_tz)
+
+        label = f"{start.strftime('%Y-%m-%d %H:%M')}  {end.strftime('%Y-%m-%d %H:%M')}"
+        filename = f"datos_{start.strftime('%Y%m%d_%H%M')}_a_{end.strftime('%Y%m%d_%H%M')}.xlsx"
+    # else:
+    #     # Modo tradicional: por fecha y turno
+    #     selected_date = args.get("date")
+    #     selected_turno = args.get("turno")
+    #     shifts = {
+    #         'TM': ("07:00:00", "15:00:00"),
+    #         'TT': ("15:00:00", "23:00:00"),
+    #         'TN': ("23:00:00", "07:00:00")
+    #     }
+
+    #     if not selected_date or not selected_turno or selected_turno not in shifts:
+    #         abort(400, "Faltan fecha y turno válidos")
+
+    #     d = datetime.strptime(selected_date, "%Y-%m-%d").date()
+    #     start_naive = datetime.combine(d, datetime.strptime(shifts[selected_turno][0], "%H:%M:%S").time())
+    #     end_day = d + timedelta(days=1) if selected_turno == 'TN' else d
+    #     end_naive = datetime.combine(end_day, datetime.strptime(shifts[selected_turno][1], "%H:%M:%S").time())
+
+    #     start_local = argentina_tz.localize(start_naive)
+    #     end_local   = argentina_tz.localize(end_naive)
+    #     start_utc = start_local.astimezone(utc_tz)
+    #     end_utc   = end_local.astimezone(utc_tz)
+    #     label = f"{selected_date} - Turno {selected_turno}"
+    #     filename = f"datos_{selected_date}_turno_{selected_turno}.xlsx"
+    maquina = args.get("maquina")
+
+    # Consulta SQL entre start_utc y end_utc
+    if maquina == "todas":
+        raw_df = pd.read_sql(
+            text("""
+                SELECT time AS tiempo, m AS maquina, mOn AS encendida, mWo AS produciendo
+                FROM registros
+                WHERE time >= :s AND time < :e
+            """),
+            eng, params={"s": start_utc, "e": end_utc}
+        )
+    else:
+        raw_df = pd.read_sql(
+            text("""
+                SELECT time AS tiempo, m AS maquina, mOn AS encendida, mWo AS produciendo
+                FROM registros
+                WHERE m = :m AND time >= :s AND time < :e
+            """),
+            eng, params={"m": maquina, "s": start_utc, "e": end_utc}
+        )
+
+    # Guardar el Excel en memoria y devolverlo como descarga
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        raw_df.to_excel(writer, index=False)
+    output.seek(0)
+
+    eng.dispose()
+
+    return send_file(
+        output,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name=filename
     )

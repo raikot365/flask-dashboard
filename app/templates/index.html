@@ -18,14 +18,14 @@
         </div>
     </div>
 
-    <div class="row mb-4">
-        <div class="col-md-3">
-            <label for="startDate">Fecha y hora inicio</label>
+    <div class="row mb-3">
+        <div class="col-md-5">
+            <label for="startDate" style="margin-right: 5px;">Fecha y hora inicio</label>
             {# Modificado: Usar default('') para que sea una cadena vacía si initial_start es None #}
             <input type="datetime-local" id="startDate" class="form-control" value="{{ initial_start | default('') }}">
         </div>
-        <div class="col-md-3">
-            <label for="endDate">Fecha y hora fin</label>
+        <div class="col-md-5">
+            <label for="endDate" style="margin-right: 5px;">Fecha y hora fin</label>
             {# Modificado: Usar default('') para que sea una cadena vacía si initial_end es None #}
             <input type="datetime-local" id="endDate" class="form-control" value="{{ initial_end | default('') }}">
         </div>
