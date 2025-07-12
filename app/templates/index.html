@@ -66,23 +66,28 @@
             col.className = 'col-md-4 mb-4';
             const card = document.createElement('div');
             card.className = 'card h-100';
-            card.style.cursor = 'pointer';
+            //card.style.cursor = 'pointer';
             
-            if (startISO && endISO) {
-                // Caso: rango personalizado
-                card.addEventListener('click', () => {
-                    window.location.href = `/maquina/${item.m}?start=${startISO}&end=${endISO}`;
-                });
-            } else {
-                // Caso: turno predeterminado
-                card.addEventListener('click', () => {
-                    window.location.href = `/maquina/${item.m}?date=${date}&turno=${turno}`;
-                });
-            }
-
             const header = document.createElement('div');
             header.className = 'card-header';
-            header.innerText = `Máquina ${item.m}`;
+            header.style.cursor = 'pointer'; 
+            // Crea el link solo en el header con el nombre de la máquina
+            const link = document.createElement('a');
+            link.style.textDecoration = "none";
+            link.style.display = "block";      
+            link.style.width = "100%";        
+            link.style.height = "100%"; 
+            // link.style.color = "inherit";
+            // link.style.fontWeight = "bold";
+            // link.style.fontSize = "1.1rem";
+
+            if (startISO && endISO) {
+                link.href = `/maquina/${item.m}?start=${startISO}&end=${endISO}`;
+            } else {
+                link.href = `/maquina/${item.m}?date=${date}&turno=${turno}`;
+            }
+            link.textContent = `Máquina ${item.m}`;
+            header.appendChild(link);
 
             const body = document.createElement('div');
             body.className = 'card-body';

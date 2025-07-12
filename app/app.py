@@ -8,7 +8,7 @@ from sqlalchemy import create_engine, text
 from functools import wraps
 from werkzeug.security import check_password_hash, generate_password_hash
 import io
-from xlsxwriter import Workbook
+# from xlsxwriter import Workbook # esto no se usa
 # --------------------------------------------------------------------------
 # Config & helpers
 # --------------------------------------------------------------------------
