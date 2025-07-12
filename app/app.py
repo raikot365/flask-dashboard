@@ -7,9 +7,16 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 from functools import wraps
 from werkzeug.security import check_password_hash, generate_password_hash
-import io
+import io, logging
+
 # from xlsxwriter import Workbook # esto no se usa
-# --------------------------------------------------------------------------
+#
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s %(message)s'
+)
+
+#  --------------------------------------------------------------------------
 # Config & helpers
 # --------------------------------------------------------------------------
 UTC = timezone.utc
@@ -155,7 +162,9 @@ def index():
             last = c.execute(text("""
                 SELECT fecha, Turno
                 FROM Vista
-                ORDER BY fecha DESC, FIELD(Turno,'TM','TT','TN')
+                ORDER BY fecha DESC, FIELD(
+                    Turno COLLATE utf8mb4_unicode_ci, 'TM', 'TT', 'TN'
+                )
                 LIMIT 1
             """)).mappings().first()
 
@@ -466,41 +475,19 @@ def descargar_xls():
         except ValueError:
             abort(400, "Formato de fecha/hora inválido")
 
-        # Asegurar zona horaria local y convertir a UTC
+        # Asegurar zona horaria local
         if start.tzinfo is None:
             start = argentina_tz.localize(start)
         if end.tzinfo is None:
             end = argentina_tz.localize(end)
 
-        start_utc = start.astimezone(utc_tz)
-        end_utc   = end.astimezone(utc_tz)
 
-        label = f"{start.strftime('%Y-%m-%d %H:%M')}  {end.strftime('%Y-%m-%d %H:%M')}"
+        # start_utc = start.astimezone(utc_tz)
+        # end_utc   = end.astimezone(utc_tz)
+        # logging.info(f"Rango de fechas UTC: {start_utc} a {end_utc}")
+        
         filename = f"datos_{start.strftime('%Y%m%d_%H%M')}_a_{end.strftime('%Y%m%d_%H%M')}.xlsx"
-    # else:
-    #     # Modo tradicional: por fecha y turno
-    #     selected_date = args.get("date")
-    #     selected_turno = args.get("turno")
-    #     shifts = {
-    #         'TM': ("07:00:00", "15:00:00"),
-    #         'TT': ("15:00:00", "23:00:00"),
-    #         'TN': ("23:00:00", "07:00:00")
-    #     }
 
-    #     if not selected_date or not selected_turno or selected_turno not in shifts:
-    #         abort(400, "Faltan fecha y turno válidos")
-
-    #     d = datetime.strptime(selected_date, "%Y-%m-%d").date()
-    #     start_naive = datetime.combine(d, datetime.strptime(shifts[selected_turno][0], "%H:%M:%S").time())
-    #     end_day = d + timedelta(days=1) if selected_turno == 'TN' else d
-    #     end_naive = datetime.combine(end_day, datetime.strptime(shifts[selected_turno][1], "%H:%M:%S").time())
-
-    #     start_local = argentina_tz.localize(start_naive)
-    #     end_local   = argentina_tz.localize(end_naive)
-    #     start_utc = start_local.astimezone(utc_tz)
-    #     end_utc   = end_local.astimezone(utc_tz)
-    #     label = f"{selected_date} - Turno {selected_turno}"
-    #     filename = f"datos_{selected_date}_turno_{selected_turno}.xlsx"
     maquina = args.get("maquina")
 
     # Consulta SQL entre start_utc y end_utc
@@ -511,7 +498,7 @@ def descargar_xls():
                 FROM registros
                 WHERE time >= :s AND time < :e
             """),
-            eng, params={"s": start_utc, "e": end_utc}
+            eng, params={"s": start, "e": end}
         )
     else:
         raw_df = pd.read_sql(
@@ -520,7 +507,7 @@ def descargar_xls():
                 FROM registros
                 WHERE m = :m AND time >= :s AND time < :e
             """),
-            eng, params={"m": maquina, "s": start_utc, "e": end_utc}
+            eng, params={"m": maquina, "s": start, "e": end}
         )
 
     # Guardar el Excel en memoria y devolverlo como descarga
