@@ -9,7 +9,7 @@
   
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
 </head>
-<body data-bs-theme="light">
+<body data-bs-theme="{{ session.get('theme', 'light') }}">
   <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
     <div class="container-fluid">
       <a class="navbar-brand" href="{{ url_for('index') }}"><i class="bi bi-database-fill-gear"></i> Control de Producción</a>
@@ -27,8 +27,8 @@
       <button class="btn btn-outline-light ms-auto me-3" onclick="change_theme()"><i class="bi bi-circle-half"></i></button>
       
       {% if session.get("user_id") %}
-      <a href="{{url_for('descargar')}}" class="btn btn-secondary my-2 my-sm-0 me-3" type="submit">Descarga</a>
-      <a href="{{url_for('logout')}}" class="btn btn-secondary my-2 my-sm-0" type="submit">Salir</a>
+      <a href="{{url_for('descargar')}}" class="btn btn-success my-2 my-sm-0 me-3" type="submit">Descarga</a>
+      <a href="{{url_for('logout')}}" class="btn btn-danger my-2 my-sm-0" type="submit">Salir</a>
       {% endif %}
     </div>
   </nav>
@@ -36,7 +36,16 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.6/dist/js/bootstrap.bundle.min.js"></script>
   <script>
     function change_theme() {
-      document.body.dataset.bsTheme = document.body.dataset.bsTheme === 'light' ? 'dark' : 'light';
+      const current = document.body.dataset.bsTheme;
+      const next = current === 'light' ? 'dark' : 'light';
+      document.body.dataset.bsTheme = next;
+
+      // Guardar en sesión (opcional: catch para evitar errores)
+      fetch('/set-theme', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ theme: next })
+      }).catch(err => console.error("Error al guardar tema:", err));
     }
   </script>
 </body>

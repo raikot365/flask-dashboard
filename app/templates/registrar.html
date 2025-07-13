@@ -1,18 +1,52 @@
 {% extends "layout.html" %}
+{% block title %}Registrarse{% endblock %}
 {% block body %}
+
 <div class="d-flex justify-content-center align-items-center" style="min-height: 80vh;">
-  <form method="POST" action="{{url_for('registrar')}}" class="p-4 border rounded shadow bg-light" style="min-width:300px;max-width:350px;width:100%;">
-    <h4 class="mb-4 text-center">Registrarse</h4>
-    <div class="mb-3">
-      <input autofocus name="usuario" placeholder="Usuario" type="text" class="form-control" required>
+  <div class="card shadow" style="max-width: 380px; width: 100%;">
+    <div class="card-body">
+      <div class="d-flex justify-content-center mb-3">
+        <i class="bi bi-person-plus-fill text-primary" style="font-size: 3rem;"></i>
+      </div>
+      <h5 class="card-title text-center mb-4">Creá tu cuenta</h5>
+
+      <form method="post" action="{{ url_for('registrar') }}">
+        <div class="mb-3">
+          <label for="usuario" class="form-label">Usuario</label>
+          <input
+            autofocus
+            name="usuario"
+            id="usuario"
+            placeholder="Elegí un usuario"
+            type="text"
+            class="form-control"
+            required>
+        </div>
+
+        <div class="mb-3">
+          <label for="password" class="form-label">Contraseña</label>
+          <input
+            name="password"
+            id="password"
+            placeholder="Elegí una contraseña"
+            type="password"
+            class="form-control"
+            required>
+        </div>
+
+        <div class="d-grid mb-3">
+          <button type="submit" class="btn btn-primary">Registrarme</button>
+        </div>
+
+        <div class="text-center">
+          <small>
+            ¿Ya tenés cuenta?
+            <a href="{{ url_for('login') }}">Iniciá sesión</a>
+          </small>
+        </div>
+      </form>
     </div>
-    <div class="mb-3">
-      <input name="password" placeholder="Contraseña" type="password" class="form-control" required>
-    </div>
-    <div class="d-flex justify-content-between align-items-center">
-      <button type="submit" class="btn btn-primary">Aceptar</button>
-      <a href="{{url_for('login')}}" class="btn btn-link">Iniciar sesión</a>
-    </div>
-  </form>
+  </div>
 </div>
+
 {% endblock %}

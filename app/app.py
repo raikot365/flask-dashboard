@@ -472,7 +472,6 @@ def maquinas():
 # Exportar vista a Excel
 # --------------------------------------------------------------------------
 
-
 @app.route("/descargar")
 @require_login
 def descargar():
@@ -550,3 +549,16 @@ def descargar_xls():
         as_attachment=True,
         download_name=filename
     )
+
+
+# --------------------------------------------------------------------------
+# Mantener tema claro/oscuro
+# --------------------------------------------------------------------------
+
+@app.route("/set-theme", methods=["POST"])
+def set_theme():
+    theme = request.json.get("theme")
+    if theme in ["light", "dark"]:
+        session["theme"] = theme
+        return jsonify(success=True)
+    return jsonify(success=False), 400
