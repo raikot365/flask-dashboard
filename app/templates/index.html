@@ -16,6 +16,7 @@
         <div class="col-md-2">
             <button id="filterBtn" class="btn btn-primary w-100">Filtrar por turno</button>
         </div>
+
     </div>
 
     <div class="row mb-3">
@@ -234,5 +235,25 @@
             initial_end_param || null    // Pasa null si es cadena vacía
         );
     });
+
+    // -> Botón de navbar: llevar a /maquinas
+    const navBtn = document.getElementById('navMaquinasBtn');
+    if (navBtn) {
+        navBtn.addEventListener('click', () => {
+        const startISO = document.getElementById('startDate').value;
+        const endISO   = document.getElementById('endDate').value;
+        let url;
+        if (startISO && endISO) {
+            url = `/maquinas?start=${encodeURIComponent(startISO)}&end=${encodeURIComponent(endISO)}`;
+        } else {
+            const date  = document.getElementById('datePicker').value;
+            const turno = document.getElementById('turnoSelect').value;
+            url = `/maquinas?date=${encodeURIComponent(date)}&turno=${encodeURIComponent(turno)}`;
+        }
+        window.location.href = url;
+        });
+    }
+
+
 </script>
 {% endblock %}

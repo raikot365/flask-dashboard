@@ -4,8 +4,7 @@
 
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}{% endblock %}</title>
-  <!-- <link rel="stylesheet" href="https://bootswatch.com/5/cerulean/bootstrap.min.css"> -->
+  <title>SANESA</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.min.css') }}">
   
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
@@ -13,10 +12,22 @@
 <body data-bs-theme="light">
   <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
     <div class="container-fluid">
-      <a class="navbar-brand" href="{{ url_for('index') }}"><i class="bi bi-pie-chart-fill"></i> DASHBOARD</a>
-      <button class="btn btn-secondary ms-auto me-3" onclick="change_theme()">Toggle Tema</button>
-      <a href="{{url_for('descargar')}}" class="btn btn-secondary my-2 my-sm-0 me-3" type="submit">Descarga</a>
+      <a class="navbar-brand" href="{{ url_for('index') }}"><i class="bi bi-database-fill-gear"></i> Control de Producción</a>
+      
+      {% if request.endpoint == 'index' %}
+      <button id="navMaquinasBtn" class="btn btn-outline-light ms-3"title="Ver vista temporal de todas las máquinas">
+        <i class="bi bi-kanban-fill"></i> Vista temporal
+      </button>
+      {% elif request.endpoint == 'maquinas' %}
+        <a id="navTortasBtn" class="btn btn-outline-light ms-3" title="Volver a la vista de tortas">
+          <i class="bi bi-pie-chart-fill"></i> Vista tortas
+        </a>
+      {% endif %}
+      
+      <button class="btn btn-outline-light ms-auto me-3" onclick="change_theme()"><i class="bi bi-circle-half"></i></button>
+      
       {% if session.get("user_id") %}
+      <a href="{{url_for('descargar')}}" class="btn btn-secondary my-2 my-sm-0 me-3" type="submit">Descarga</a>
       <a href="{{url_for('logout')}}" class="btn btn-secondary my-2 my-sm-0" type="submit">Salir</a>
       {% endif %}
     </div>

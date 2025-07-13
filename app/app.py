@@ -9,16 +9,16 @@ from functools import wraps
 from werkzeug.security import check_password_hash, generate_password_hash
 import io, logging
 
-# from xlsxwriter import Workbook # esto no se usa
-#
+
+#  --------------------------------------------------------------------------
+# Config & helpers
+# --------------------------------------------------------------------------
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s %(message)s'
 )
 
-#  --------------------------------------------------------------------------
-# Config & helpers
-# --------------------------------------------------------------------------
 UTC = timezone.utc
 LOCAL_TZ = pytz.timezone(os.getenv("TZ", "America/Argentina/Buenos_Aires"))
 
@@ -46,7 +46,6 @@ def get_engine():
 # --------------------------------------------------------------------------
 # Flask app
 # --------------------------------------------------------------------------
-
 
 app = Flask(__name__)
 
@@ -397,49 +396,76 @@ def maquina(m):
 # --------------------------------------------------------------------------
 
 @app.route("/maquinas", methods=["GET"])
+@require_login
 def maquinas():
-    '''Esto es una copia de la otra vista para hacer funcionar
-    los graficos pero habría que cambiar para el nuevo gráfico y
-    la consulta'''
-    date  = request.args.get("date")
-    turno = request.args.get("turno")
-    if not date or not turno:
-        return redirect(url_for("index"))
-
-    
+    args = request.args
+    start_str = args.get("start")
+    end_str   = args.get("end")
     eng = get_engine()
-    shifts = {'TM': ("07:00:00","15:00:00"),
-              'TT': ("15:00:00","23:00:00"),
-              'TN': ("23:00:00","07:00:00")}
-    if turno not in shifts:
-        return redirect(url_for("index"))
 
-    d = datetime.strptime(date, "%Y-%m-%d").date()
-    start_time_str = shifts[turno][0]
-    end_time_str = shifts[turno][1]
-    start_naive_local = datetime.combine(d, datetime.strptime(start_time_str, "%H:%M:%S").time())
-    if turno == 'TN':
-        end_naive_local = datetime.combine(d + timedelta(days=1), datetime.strptime(end_time_str, "%H:%M:%S").time())
+    # Modo rango libre
+    if start_str and end_str:
+        try:
+            start = datetime.fromisoformat(start_str)
+            end   = datetime.fromisoformat(end_str)
+        except ValueError:
+            return redirect(url_for("index"))
+
+        # Localizar y convertir a UTC
+        if start.tzinfo is None:
+            start = argentina_tz.localize(start)
+        if end.tzinfo is None:
+            end = argentina_tz.localize(end)
+        start_utc = start.astimezone(utc_tz)
+        end_utc   = end.astimezone(utc_tz)
+
+    # Modo fecha+turno
     else:
-        end_naive_local = datetime.combine(d, datetime.strptime(end_time_str, "%H:%M:%S").time())
-    start_aware_local = argentina_tz.localize(start_naive_local)
-    end_aware_local = argentina_tz.localize(end_naive_local)
-    start_utc = start_aware_local.astimezone(utc_tz)
-    end_utc = end_aware_local.astimezone(utc_tz)
+        shifts = {
+            'TM': ("07:00:00", "15:00:00"),
+            'TT': ("15:00:00", "23:00:00"),
+            'TN': ("23:00:00", "07:00:00")
+        }
+        date  = args.get("date")
+        turno = args.get("turno")
+        if not date or not turno or turno not in shifts:
+            return redirect(url_for("index"))
 
-    with eng.connect() as c:
-        rows = c.execute(text("""
-            SELECT DISTINCT m FROM registros
-            WHERE time >= :s AND time < :e
-            ORDER BY m
-        """), {"s": start_utc, "e": end_utc}).fetchall()
-    maquinas = [row[0] for row in rows]
+        d = datetime.strptime(date, "%Y-%m-%d").date()
+        t0, t1 = shifts[turno]
+        start_naive = datetime.combine(d, datetime.strptime(t0, "%H:%M:%S").time())
+        if turno == 'TN':
+            end_naive = datetime.combine(d + timedelta(days=1),
+                                         datetime.strptime(t1, "%H:%M:%S").time())
+        else:
+            end_naive = datetime.combine(d,
+                                         datetime.strptime(t1, "%H:%M:%S").time())
+
+        start = argentina_tz.localize(start_naive)
+        end   = argentina_tz.localize(end_naive)
+        start_utc = start.astimezone(utc_tz)
+        end_utc   = end.astimezone(utc_tz)
+
+    # Consulta máquinas distintas en el intervalo
+    with eng.connect() as conn:
+        rows = conn.execute(
+            text("""
+                SELECT DISTINCT m
+                FROM registros
+                WHERE time >= :s AND time < :e
+                ORDER BY m
+            """), {"s": start_utc, "e": end_utc}
+        ).fetchall()
+    maquinas = [r[0] for r in rows]
 
     return render_template(
         "maquinas.html",
         maquinas=maquinas,
-        date=date,
-        turno=turno
+        # Pasa ambos pares de parámetros (uno de los dos estará vacío)
+        date=args.get("date", ""),
+        turno=args.get("turno", ""),
+        start=start_str or "",
+        end=end_str or ""
     )
 
 # --------------------------------------------------------------------------

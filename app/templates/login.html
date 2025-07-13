@@ -1,7 +1,7 @@
 {% extends "layout.html" %}
 {% block body %}
 <div class="d-flex justify-content-center align-items-center" style="min-height: 80vh;">
-  <form method="POST" action="{{url_for('login')}}" class="p-4 border rounded shadow bg-light" style="min-width:300px;max-width:350px;width:100%;">
+  <form method="POST" action="{{url_for('login')}}" class="p-4 border rounded shadow" style="min-width:300px;max-width:350px;width:100%;">
     <h4 class="mb-4 text-center">Iniciar sesión</h4>
     <div class="mb-3">
       <input autofocus name="usuario" placeholder="Usuario" type="text" class="form-control" required>

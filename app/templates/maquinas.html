@@ -2,23 +2,30 @@
 {% block body %}
 <div class="container mt-4">
   <div id="checkboxes-maquinas" class="d-flex flex-wrap gap-2 mb-4">
-    {% for maquina in maquinas %}
-      <div class="form-check btn-secondary" style="padding:3px 5px 3px 30px;border-radius: 6px;">
-        <input class="form-check-input" type="checkbox" value="" id="check-{{ maquina }}" checked onchange="toggleMaquina('{{ maquina }}')">
-        <label class="form-check-label" for="check-{{ maquina }}">Máquina Nº {{ maquina }}</label>
+    {% for m in maquinas %}
+      <div class="form-check btn-secondary" style="padding:3px 5px 3px 30px; border-radius:6px;">
+        <input class="form-check-input"
+               type="checkbox"
+               id="check-{{ m }}"
+               checked
+               onchange="toggleMaquina({{ m }})">
+        <label class="form-check-label" for="check-{{ m }}">
+          Máquina Nº {{ m }}
+        </label>
       </div>
     {% endfor %}
   </div>
+
   <div id="maquinas-list">
-    {% for maquina in maquinas %}
-    <div class="maquina-block mb-5" id="maquina-block-{{ maquina }}">
-      <div class="row align-items-start" id="maquina-content-{{ maquina }}">
+    {% for m in maquinas %}
+    <div class="maquina-block mb-5" id="maquina-block-{{ m }}">
+      <div class="row align-items-start">
         <div class="col-md-8">
-            <h6 class="text-center">Máquina {{ maquina }}</h6>
-          <canvas id="chart-{{ maquina }}" height="100"></canvas>
+          <h6 class="text-center">Máquina {{ m }}</h6>
+          <canvas id="chart-{{ m }}" height="100"></canvas>
         </div>
         <div class="col-md-4">
-          <div id="resumen-{{ maquina }}"></div>
+          <div id="resumen-{{ m }}"></div>
         </div>
       </div>
     </div>
@@ -29,140 +36,187 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0"></script>
 <script>
-var maquinas = {{ maquinas | tojson | safe }};
-const urlParams = new URLSearchParams(window.location.search);
-const date = urlParams.get('date');
-const turno = urlParams.get('turno');
+  const urlParams = new URLSearchParams(window.location.search);
+  const date  = urlParams.get('date');
+  const turno = urlParams.get('turno');
+  const start = urlParams.get('start');
+  const end   = urlParams.get('end');
+  const maquinas = {{ maquinas|tojson|safe }};
 
-function toggleMaquina(maquina) {
-  const block = document.getElementById(`maquina-block-${maquina}`);
-  const check = document.getElementById(`check-${maquina}`);
-  if (block) {
-    block.style.display = check.checked ? '' : 'none';
+  function toggleMaquina(m) {
+    const block = document.getElementById(`maquina-block-${m}`);
+    const chk   = document.getElementById(`check-${m}`);
+    block.style.display = chk.checked ? '' : 'none';
   }
-}
 
-async function fetchAndRender(maquina) {
-  if (!date || !turno) return;
-  const res = await fetch(`/api/maquina/${maquina}?date=${date}&turno=${turno}`);
-  if (!res.ok) {
-    document.getElementById(`chart-${maquina}`).parentElement.innerHTML = '<p class="text-center text-muted">No se pudo obtener los datos.</p>';
-    return;
-  }
-  const result = await res.json();
-  const data = result.data;
-  if (!data || data.length === 0) {
-    document.getElementById(`chart-${maquina}`).parentElement.innerHTML = '<p class="text-center text-muted">No hay datos para mostrar en este período.</p>';
-    return;
-  }
-  const timeSeries = data.map(d => new Date(d.time));
-  const mOn = data.map(d => d.mOn);
-  const mWo = data.map(d => d.mWo);
-  const encendidaData = timeSeries.map((t, i) => ({ x: t, y: mOn[i] === 1 ? 1 : 0 }));
-  const produciendoData = timeSeries.map((t, i) => ({ x: t, y: mWo[i] === 1 ? 0.8 : 0 }));
-  const fullChartHeight = 1;
-  const apagadaBackgroundData = data.map(d => ({ x: new Date(d.time), y: (d.mOn === 0) ? fullChartHeight : 0 }));
-  const encendidaSinProducirBackgroundData = data.map(d => ({ x: new Date(d.time), y: (d.mOn === 1 && d.mWo === 0) ? fullChartHeight : 0 }));
-  const produciendoBackgroundData = data.map(d => ({ x: new Date(d.time), y: (d.mOn === 1 && d.mWo === 1) ? fullChartHeight : 0 }));
-  const ctx = document.getElementById(`chart-${maquina}`).getContext('2d');
-  if (Chart.getChart(ctx)) Chart.getChart(ctx).destroy();
-  new Chart(ctx, {
-    type: 'line',
-    data: {
-      datasets: [
-        { label: 'Fondo Apagada', data: apagadaBackgroundData, backgroundColor: 'rgba(255,0,0,0.2)', borderColor: 'transparent', fill: 'origin', stepped: true, pointRadius: 0, order: 3, hidden: false, pointHoverRadius: 0 },
-        { label: 'Fondo Encendida sin producir', data: encendidaSinProducirBackgroundData, backgroundColor: 'rgba(255,165,0,0.2)', borderColor: 'transparent', fill: 'origin', stepped: true, pointRadius: 0, order: 2, hidden: false, pointHoverRadius: 0 },
-        { label: 'Fondo Produciendo', data: produciendoBackgroundData, backgroundColor: 'rgba(0,128,0,0.2)', borderColor: 'transparent', fill: 'origin', stepped: true, pointRadius: 0, order: 1, hidden: false, pointHoverRadius: 0 },
-        { label: 'Encendida', data: encendidaData, stepped: true, borderColor: '#4caf50', pointRadius: 0, order: 0 },
-        { label: 'Produciendo', data: produciendoData, stepped: true, borderColor: '#2196f3', pointRadius: 0, order: 0 }
-      ]
-    },
-    options: {
-      interaction: { mode: 'index', intersect: false },
-      plugins: {
-        title: { display: true, text: `Máquina ${maquina} - Fecha ${date} - Turno ${turno}` },
-        tooltip: {
-          callbacks: {
-            label: function(ctx) {
-              const y = ctx.parsed.y;
-              if (y === 1) return 'Encendida';
-              if (y === 0.8) return 'Produciendo';
-              return 'Apagada';
-            }
-          }
-        },
-        legend: {
-          display: true,
-          labels: {
-            filter: function(legendItem) {
-              return !legendItem.text.startsWith('Fondo ');
-            }
-          }
-        }
+  async function fetchAndRender(m) {
+    let apiUrl;
+    if (start && end) {
+      apiUrl = `/api/maquina/${m}?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`;
+    } else if (date && turno) {
+      apiUrl = `/api/maquina/${m}?date=${encodeURIComponent(date)}&turno=${encodeURIComponent(turno)}`;
+    } else {
+      return;
+    }
+
+    const res = await fetch(apiUrl);
+    const parent = document.getElementById(`chart-${m}`).parentElement;
+    if (!res.ok) {
+      parent.innerHTML = '<p class="text-center text-muted">Error al obtener datos.</p>';
+      return;
+    }
+
+    const { data } = await res.json();
+    if (!data || data.length === 0) {
+      parent.innerHTML = '<p class="text-center text-muted">No hay datos.</p>';
+      return;
+    }
+
+    // Prepara series
+    const times = data.map(d => new Date(d.time));
+    const mOn   = data.map(d => d.mOn);
+    const mWo   = data.map(d => d.mWo);
+    const fullH = 1;
+    const datasets = [
+      {
+        label: 'Fondo Apagada',
+        data: data.map(d => ({ x: new Date(d.time), y: d.mOn===0 ? fullH : 0 })),
+        backgroundColor: 'rgba(255,0,0,0.2)',
+        borderColor: 'transparent', fill:'origin',
+        stepped:true, pointRadius:0, order:3
       },
-      scales: {
-        x: {
-          type: 'time',
-          time: { unit: 'hour', displayFormats: { hour: 'HH:mm' } },
-          ticks: {
-            autoSkip: false,
-            callback: (v, i, ticks) => {
-              const d = new Date(ticks[i].value);
-              return d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+      {
+        label: 'Fondo Encendida sin producir',
+        data: data.map(d => ({ x: new Date(d.time),
+                               y: d.mOn===1 && d.mWo===0 ? fullH : 0 })),
+        backgroundColor: 'rgba(255,165,0,0.2)',
+        borderColor: 'transparent', fill:'origin',
+        stepped:true, pointRadius:0, order:2
+      },
+      {
+        label: 'Fondo Produciendo',
+        data: data.map(d => ({ x: new Date(d.time),
+                               y: d.mOn===1 && d.mWo===1 ? fullH : 0 })),
+        backgroundColor: 'rgba(0,128,0,0.2)',
+        borderColor: 'transparent', fill:'origin',
+        stepped:true, pointRadius:0, order:1
+      },
+      {
+        label: 'Encendida',
+        data: times.map((t,i)=>({x:t,y: mOn[i]===1?1:0})),
+        stepped:true, borderColor:'#4caf50', pointRadius:0, order:0
+      },
+      {
+        label: 'Produciendo',
+        data: times.map((t,i)=>({x:t,y: mWo[i]===1?0.8:0})),
+        stepped:true, borderColor:'#2196f3', pointRadius:0, order:0
+      }
+    ];
+
+    const ctx = document.getElementById(`chart-${m}`).getContext('2d');
+    if (Chart.getChart(ctx)) Chart.getChart(ctx).destroy();
+
+    new Chart(ctx, {
+      type: 'line',
+      data: { datasets },
+      options: {
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          title: {
+            display: true,
+            text: start && end
+              ? `Máquina ${m} — ${start} → ${end}`
+              : `Máquina ${m} — ${date} - ${turno}`
+          },
+          tooltip: {
+            callbacks: {
+              label: ctx => {
+                const y = ctx.parsed.y;
+                if (y === 1)   return 'Encendida';
+                if (y === 0.8) return 'Produciendo';
+                return 'Apagada';
+              }
             }
           },
-          title: { display: true, text: 'Hora' }
+          legend: {
+            labels: {
+              filter: item => !item.text.startsWith('Fondo ')
+            }
+          }
         },
-        y: {
-          min: 0,
-          max: 1.1,
-          ticks: {
-            callback: v => {
-              if (v === 1) return 'Encendida';
-              if (v === 0.8) return 'Produciendo';
-              if (v === 0) return 'Apagada';
-              return '';
-            }
+        scales: {
+          x: {
+            type:'time', time:{unit:'hour',displayFormats:{hour:'HH:mm'}},
+            ticks:{autoSkip:false,
+              callback:(v,i,ticks)=>new Date(ticks[i].value)
+                .toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})
+            },
+            title:{display:true,text:'Hora'}
           },
-          title: { display: true, text: 'Estado' }
+          y: {
+            min:0, max:1.1,
+            ticks:{callback:v=>{
+              if      (v===1)   return 'Encendida';
+              else if (v===0.8) return 'Produciendo';
+              else if (v===0)   return 'Apagada';
+              else return '';
+            }},
+            title:{display:true,text:'Estado'}
+          }
         }
       }
+    });
+
+    // Resumen textual
+    const resumen = { apagada:0, encendida:0, produciendo:0 };
+    data.forEach(d=>{
+      if      (d.mOn===0)        resumen.apagada++;
+      else if (d.mWo===1)        resumen.produciendo++;
+      else                        resumen.encendida++;
+    });
+    const total = data.length, totalMin = total*3;
+    const lineHTML = (n,v)=>{
+      const mins = v*3, pct = ((mins/totalMin)*100).toFixed(1);
+      return `<strong>${n}</strong>: ${mins} min (${pct}%)`;
+    };
+    const t0 = times[0].toLocaleString('es-AR',{dateStyle:'short',timeStyle:'medium'});
+    const t1 = times[total-1].toLocaleString('es-AR',{dateStyle:'short',timeStyle:'medium'});
+    document.getElementById(`resumen-${m}`).innerHTML = `
+      <div class="alert alert-light mt-2">
+        ${lineHTML('Produciendo',   resumen.produciendo)}<br>
+        ${lineHTML('Encendida sin producir', resumen.encendida)}<br>
+        ${lineHTML('Apagada',       resumen.apagada)}<br>
+        <strong>Inicio:</strong> ${t0}<br>
+        <strong>Fin:</strong> ${t1}<br>
+        <strong># muestras:</strong> ${total}
+      </div>
+    `;
+  }
+
+  window.addEventListener('DOMContentLoaded', () => {
+    maquinas.forEach(m => fetchAndRender(m));
+  });
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const btn = document.getElementById('navTortasBtn');
+    if (btn) {
+      const urlParams = new URLSearchParams(window.location.search);
+      const date  = urlParams.get('date');
+      const turno = urlParams.get('turno');
+      const start = urlParams.get('start');
+      const end   = urlParams.get('end');
+      let href;
+
+      if (start && end) {
+        href = `/?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`;
+      } else if (date && turno) {
+        href = `/?date=${encodeURIComponent(date)}&turno=${encodeURIComponent(turno)}`;
+      } else {
+        href = '/';
+      }
+
+      btn.setAttribute('href', href);
     }
   });
-  // Resumen textual
-  const resumen = { encendida: 0, produciendo: 0, apagada: 0 };
-  data.forEach(d => {
-    if (d.mOn === 0) resumen.apagada++;
-    else if (d.mWo === 1) resumen.produciendo++;
-    else resumen.encendida++;
-  });
-  const totalm = data.length;
-  const totalMin = totalm * 3;
-  const crearLinea = (nombre, valor) => {
-    const min = valor * 3;
-    const pct = ((min / totalMin) * 100).toFixed(1);
-    return `<strong>${nombre}</strong>: ${min} min (${pct}%)`;
-  };
-  const fechaIniFormateada = timeSeries[0].toLocaleString('es-AR', { weekday: 'long', day: '2-digit', month: 'long', hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'long' });
-  const fechaFinFormateada = timeSeries[data.length-1].toLocaleString('es-AR', { weekday: 'long', day: '2-digit', month: 'long', hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'long' });
-  const resumenHTML = `
-    <div class="alert alert-light mt-2">
-      <h6 class="mb-2">Resumen:</h6>
-      ${crearLinea('Produciendo', resumen.produciendo)}<br>
-      ${crearLinea('Encendida sin producir', resumen.encendida)}<br>
-      ${crearLinea('Apagada', resumen.apagada)}<br>
-      <strong>Primer muestra</strong>: ${fechaIniFormateada}<br>
-      <strong>Ultima muestra</strong>: ${fechaFinFormateada}<br>
-      <strong>Total de muestras</strong>: ${totalm}<br>
-    </div>
-  `;
-  document.getElementById(`resumen-${maquina}`).innerHTML = resumenHTML;
-}
-
-// Inicializar todos los gráficos al cargar
-window.addEventListener('DOMContentLoaded', () => {
-  maquinas.forEach(maquina => fetchAndRender(maquina));
-});
 </script>
 {% endblock %}
-
