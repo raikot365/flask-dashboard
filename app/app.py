@@ -300,6 +300,7 @@ def api_vista():
 # serie temporal por máquina 
 # --------------------------------------------------------------------------
 @app.route("/api/maquina/<int:m>")
+@require_login
 def api_maquina(m):
     date  = request.args.get("date")
     turno = request.args.get("turno")
