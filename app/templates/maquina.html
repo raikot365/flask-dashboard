@@ -112,35 +112,22 @@
           type: 'line', // El tipo de gráfico principal sigue siendo 'line'
           data: {
               datasets: [
-                  // --- DATASETS DE FONDO (Con 'order' más alto para que se dibujen primero, detrás de las líneas) ---
                   {
-                      label: 'Fondo Apagada',
-                      data: apagadaBackgroundData,
-                      backgroundColor: 'rgba(255, 0, 0, 0.2)', // Rojo semitransparente
+                      label: 'Fondo Encendida sin producir',
+                      data: encendidaSinProducirBackgroundData,
+                      backgroundColor: 'rgba(255, 0, 0, 0.2)', // rojo
                       borderColor: 'transparent', // Sin borde
                       fill: 'origin', // Rellena desde la línea hasta el origen (Y=0)
                       stepped: true, // Cambia de color instantáneamente
                       pointRadius: 0, // Sin puntos
-                      order: 3, // Se dibuja primero (más al fondo)
+                      order: 2, // Se dibuja en segundo lugar
                       hidden: false, // Asegura que esté visible
                       pointHoverRadius: 0, // No reacciona al hover
                   },
                   {
-                      label: 'Fondo Encendida sin producir',
-                      data: encendidaSinProducirBackgroundData,
-                      backgroundColor: 'rgba(255, 165, 0, 0.2)', // Naranja semitransparente
-                      borderColor: 'transparent',
-                      fill: 'origin',
-                      stepped: true,
-                      pointRadius: 0,
-                      order: 2, // Se dibuja en segundo lugar
-                      hidden: false,
-                      pointHoverRadius: 0,
-                  },
-                  {
                       label: 'Fondo Produciendo',
                       data: produciendoBackgroundData,
-                      backgroundColor: 'rgba(0, 128, 0, 0.2)', // Verde semitransparente
+                      backgroundColor: 'rgba(0, 128, 0, 0.2)', // verde
                       borderColor: 'transparent',
                       fill: 'origin',
                       stepped: true,

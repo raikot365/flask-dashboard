@@ -83,17 +83,10 @@
     const fullH = 1;
     const datasets = [
       {
-        label: 'Fondo Apagada',
-        data: data.map(d => ({ x: new Date(d.time), y: d.mOn===0 ? fullH : 0 })),
-        backgroundColor: 'rgba(255,0,0,0.2)',
-        borderColor: 'transparent', fill:'origin',
-        stepped:true, pointRadius:0, order:3
-      },
-      {
         label: 'Fondo Encendida sin producir',
         data: data.map(d => ({ x: new Date(d.time),
                                y: d.mOn===1 && d.mWo===0 ? fullH : 0 })),
-        backgroundColor: 'rgba(255,165,0,0.2)',
+        backgroundColor: 'rgba(255, 0, 0, 0.2)',
         borderColor: 'transparent', fill:'origin',
         stepped:true, pointRadius:0, order:2
       },
