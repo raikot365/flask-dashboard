@@ -39,7 +39,170 @@
 
 <!-- <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0"></script> -->
+
 <script>
+  // --- Helpers ---------------------------------------------------------
+  function toHOUR(x) {
+      const d = (x instanceof Date) ? x : new Date(typeof x === 'number' ? x : Date.parse(x));
+      let hh = d.getUTCHours();
+      const mm = String(d.getUTCMinutes()).padStart(2, '0');
+      const ampm = hh >= 12 ? 'pm' : 'am';
+      hh = hh % 12 || 12;
+      hh = String(hh).padStart(2, '0');
+      return `${hh}:${mm} ${ampm}`;
+  }
+
+  function toDATE(x) {
+      const d = (x instanceof Date) ? x : new Date(typeof x === 'number' ? x : Date.parse(x));
+      const dd = String(d.getUTCDate()).padStart(2,'0');
+      const mo = String(d.getUTCMonth()+1).padStart(2,'0');
+      const yy = d.getUTCFullYear();
+      let hh = d.getUTCHours();
+      const mm = String(d.getUTCMinutes()).padStart(2,'0');
+      const ss = String(d.getUTCSeconds()).padStart(2,'0');
+      const ampm = hh >= 12 ? 'pm' : 'am';
+      hh = hh % 12 || 12;
+      hh = String(hh).padStart(2,'0');
+      return `${dd}/${mo}/${yy} ${hh}:${mm}:${ss} ${ampm}`;
+  }
+
+  function formatFull(d) {
+      const dd = String(d.getUTCDate()).padStart(2,'0');
+      const mo = String(d.getUTCMonth()+1).padStart(2,'0');
+      const yy = d.getUTCFullYear();
+      const hh = String(d.getUTCHours()).padStart(2,'0');
+      const mm = String(d.getUTCMinutes()).padStart(2,'0');
+      const ss = String(d.getUTCSeconds()).padStart(2,'0');
+      return `${dd}/${mo}/${yy} ${hh}:${mm}:${ss}`;
+  }
+  // -------------------------------------------------------------------------
+
+  const maquinas = {{ maquinas|tojson|safe }};
+
+  async function fetchAndRender(m) {
+    const urlParams = new URLSearchParams(window.location.search);
+    const date  = urlParams.get('date');
+    const turno = urlParams.get('turno');
+    const start = urlParams.get('start');
+    const end   = urlParams.get('end');
+
+    let apiUrl;
+    if (start && end) {
+      apiUrl = `/api/maquina/${m}?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`;
+    } else if (date && turno) {
+      apiUrl = `/api/maquina/${m}?date=${encodeURIComponent(date)}&turno=${encodeURIComponent(turno)}`;
+    } else return;
+
+    const res = await fetch(apiUrl);
+    const parent = document.getElementById(`chart-${m}`).parentElement;
+    if (!res.ok) { parent.innerHTML='<p class="text-center text-muted">Error al obtener datos.</p>'; return; }
+
+    const { data } = await res.json();
+    if (!data || data.length===0) { parent.innerHTML='<p class="text-center text-muted">No hay datos.</p>'; return; }
+
+    // Normalizamos todas las fechas a UTC como timestamps numéricos
+    const timesUTC = data.map(d => {
+      const dt = new Date(d.time);
+      return Date.UTC(
+        dt.getUTCFullYear(),
+        dt.getUTCMonth(),
+        dt.getUTCDate(),
+        dt.getUTCHours(),
+        dt.getUTCMinutes(),
+        dt.getUTCSeconds()
+      );
+    });
+
+    const mOn = data.map(d => d.mOn);
+    const mWo = data.map(d => d.mWo);
+    const fullH = 1.1;
+
+    const datasets = [
+      { label:'Fondo Encendida sin producir', data: data.map((d,i)=>({x:timesUTC[i],y:d.mOn===1&&d.mWo===0?fullH:0})), backgroundColor:'rgba(255,0,0,0.2)', borderColor:'transparent', fill:'origin', stepped:true, pointRadius:0, order:2 },
+      { label:'Fondo Produciendo', data: data.map((d,i)=>({x:timesUTC[i],y:d.mOn===1&&d.mWo===1?fullH:0})), backgroundColor:'rgba(0,128,0,0.2)', borderColor:'transparent', fill:'origin', stepped:true, pointRadius:0, order:1 },
+      { label:'Encendida', data:mOn.map((v,i)=>({x:timesUTC[i],y:v===1?1:0})), stepped:true, borderColor:'#4caf50', pointRadius:0 },
+      { label:'Produciendo', data:mWo.map((v,i)=>({x:timesUTC[i],y:v===1?0.8:0})), stepped:true, borderColor:'#2196f3', pointRadius:0 }
+    ];
+
+    const ctx = document.getElementById(`chart-${m}`).getContext('2d');
+    if (Chart.getChart(ctx)) Chart.getChart(ctx).destroy();
+
+    new Chart(ctx, {
+      type:'line',
+      data:{ datasets },
+      options:{
+        adapters:{ date:{ zone:'utc' } },
+        interaction:{ mode:'index', intersect:false },
+        plugins:{
+          title:{ display:true, text: start&&end?`Máquina ${m} — ${start} → ${end}`:`Máquina ${m} — ${date} - ${turno}` },
+          tooltip:{ callbacks:{
+            title: items => toDATE(items[0]?.parsed?.x ?? items[0]?.raw?.x ?? items[0]?.label),
+            label: ctx => { const y=ctx.parsed.y; if(y===1) return 'Encendida'; if(y===0.8) return 'Produciendo'; return 'Apagada'; }
+          }},
+          legend:{ labels:{ filter: item => !item.text.startsWith('Fondo ') } }
+        },
+        scales:{
+          x:{ type:'time', time:{ unit:'hour', displayFormats:{ hour:'HH:mm' } },
+              ticks:{ autoSkip:false, callback:(v,i,ticks)=> toHOUR(ticks[i].value) },
+              title:{ display:true, text:'Hora' }
+          },
+          y:{ min:0, max:1.1,
+              ticks:{ callback:v=>{ if(v===1)return'Encendida'; if(v===0.8)return'Produciendo'; if(v===0)return'Apagada'; return ''; } },
+              title:{ display:true, text:'Estado' }
+          }
+        }
+      }
+    });
+
+    // Resumen
+    const resumen = { apagada:0, encendida:0, produciendo:0 };
+    data.forEach(d=>{ if(d.mOn===0) resumen.apagada++; else if(d.mWo===1) resumen.produciendo++; else resumen.encendida++; });
+
+    const total = data.length;
+    const totalMin = total*3;
+    const lineHTML = (n,v)=>{ const mins=v*3; const pct=((mins/totalMin)*100).toFixed(1); return `<strong>${n}</strong>: ${mins} min (${pct}%)`; };
+
+    const fechaIni = formatFull(new Date(timesUTC[0]));
+    const fechaFin = formatFull(new Date(timesUTC[total-1]));
+
+    document.getElementById(`resumen-${m}`).innerHTML = `
+      <div class="alert alert-light mt-2">
+        ${lineHTML('Produciendo', resumen.produciendo)}<br>
+        ${lineHTML('Encendida sin producir', resumen.encendida)}<br>
+        ${lineHTML('Apagada', resumen.apagada)}<br>
+        <strong>Inicio:</strong> ${fechaIni}<br>
+        <strong>Fin:</strong> ${fechaFin}<br>
+        <strong># muestras:</strong> ${total}
+      </div>
+    `;
+  }
+
+  window.addEventListener('DOMContentLoaded', () => { maquinas.forEach(m => fetchAndRender(m)); });
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const btn = document.getElementById('navTortasBtn');
+    if (btn) {
+      const urlParams = new URLSearchParams(window.location.search);
+      const date  = urlParams.get('date');
+      const turno = urlParams.get('turno');
+      const start = urlParams.get('start');
+      const end   = urlParams.get('end');
+      let href;
+
+      if (start && end) {
+        href = `/?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`;
+      } else if (date && turno) {
+        href = `/?date=${encodeURIComponent(date)}&turno=${encodeURIComponent(turno)}`;
+      } else {
+        href = '/';
+      }
+
+      btn.setAttribute('href', href);
+    }
+  });
+</script>
+
+<!-- <script>
   const urlParams = new URLSearchParams(window.location.search);
   const date  = urlParams.get('date');
   const turno = urlParams.get('turno');
@@ -146,8 +309,8 @@
             type:'time', time:{unit:'hour',displayFormats:{hour:'HH:mm'}},
             ticks:{autoSkip:false,
               callback:(v,i,ticks)=>new Date(ticks[i].value)
-                .toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})
-            },
+                .toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',timeZone: 'UTC'})
+            },//lo que recien cambiamos
             title:{display:true,text:'Hora'}
           },
           y: {
@@ -176,8 +339,8 @@
       const mins = v*3, pct = ((mins/totalMin)*100).toFixed(1);
       return `<strong>${n}</strong>: ${mins} min (${pct}%)`;
     };
-    const t0 = times[0].toLocaleString('es-AR',{dateStyle:'short',timeStyle:'medium'});
-    const t1 = times[total-1].toLocaleString('es-AR',{dateStyle:'short',timeStyle:'medium'});
+    const t0 = times[0].toLocaleString('es-AR',{dateStyle:'short',timeStyle:'medium',    timeZone: 'UTC'});
+    const t1 = times[total-1].toLocaleString('es-AR',{dateStyle:'short',timeStyle:'medium',     timeZone: 'UTC'});
     document.getElementById(`resumen-${m}`).innerHTML = `
       <div class="alert alert-light mt-2">
         ${lineHTML('Produciendo',   resumen.produciendo)}<br>
@@ -215,5 +378,5 @@
       btn.setAttribute('href', href);
     }
   });
-</script>
+</script> -->
 {% endblock %}
