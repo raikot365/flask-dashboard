@@ -15,7 +15,296 @@
 
 <!-- <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0"></script> -->
+
 <script>
+  // --- Helpers ---------------------------------------------------------
+  function toHOUR(x) {
+      const d = (x instanceof Date) ? x
+              : new Date(typeof x === 'number' ? x : Date.parse(x));
+            let hh = d.getUTCHours();
+            const mm = String(d.getUTCMinutes()).padStart(2, '0');
+
+            const ampm = hh >= 12 ? 'pm' : 'am';
+            hh = hh % 12;
+            hh = hh ? hh : 12; // el "0" se convierte en 12 AM
+            hh = String(hh).padStart(2, '0');
+            return `${hh}:${mm} ${ampm}`;
+  }
+
+  function toDATE(x) {
+    const d = (x instanceof Date) ? x
+            : new Date(typeof x === 'number' ? x : Date.parse(x));
+
+    const dd = String(d.getUTCDate()).padStart(2, '0');
+    const mo = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const yy = d.getUTCFullYear();
+
+    let hh = d.getUTCHours();
+    const mm = String(d.getUTCMinutes()).padStart(2, '0');
+    const ss = String(d.getUTCSeconds()).padStart(2, '0');
+
+    const ampm = hh >= 12 ? 'pm' : 'am';
+    hh = hh % 12;
+    hh = hh ? hh : 12; // el "0" se convierte en 12 AM
+    hh = String(hh).padStart(2, '0');
+
+    return `${dd}/${mo}/${yy} ${hh}:${mm}:${ss} ${ampm}`;
+ }
+
+
+  function formatFull(d) {
+      // dd/mm/yyyy HH:MM:SS 
+      const dd = String(d.getUTCDate()).padStart(2, '0');
+      const mo = String(d.getUTCMonth() + 1).padStart(2, '0');
+      const yy = d.getUTCFullYear();
+      const hh = String(d.getUTCHours()).padStart(2, '0');
+      const mm = String(d.getUTCMinutes()).padStart(2, '0');
+      const ss = String(d.getUTCSeconds()).padStart(2, '0');
+      return `${dd}/${mo}/${yy} ${hh}:${mm}:${ss}`;
+  }
+  // -------------------------------------------------------------------------
+
+  async function fetchData() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const date = urlParams.get('date');
+      const turno = urlParams.get('turno');
+      const start = urlParams.get('start');
+      const end = urlParams.get('end');
+
+      let apiUrl = `/api/maquina/{{ maquina }}?`;
+      let volverUrl = `/?`;
+      let chartTitle = `Máquina {{ maquina }}`;
+
+      if (start && end) {
+          apiUrl += `start=${start}&end=${end}`;
+          volverUrl += `start=${start}&end=${end}`;
+          try {
+              const startDateObj = new Date(start);
+              const endDateObj = new Date(end);
+
+              chartTitle += ` - Rango: ${startDateObj.toLocaleString()} a ${endDateObj.toLocaleString()}`;
+            //   chartTitle += ` - Rango: ${formatUTCFull(startDateObj)} a ${formatUTCFull(endDateObj)}`;
+          } catch (e) {
+              chartTitle += ` - Rango: ${start} a ${end}`;
+          }
+      } else if (date && turno) {
+          apiUrl += `date=${date}&turno=${turno}`;
+          volverUrl += `date=${date}&turno=${turno}`;
+          chartTitle += ` - Fecha ${date} - Turno ${turno}`;
+      } else {
+          alert('Faltan parámetros de fecha y hora o turno');
+          return;
+      }
+
+      document.getElementById('volverBtn').href = volverUrl;
+
+      const res = await fetch(apiUrl);
+      if (!res.ok) {
+          alert('No se pudo obtener los datos');
+          return;
+      }
+
+      const result = await res.json();
+      const data = result.data;
+
+      if (!data || data.length === 0) {
+          console.warn("No hay datos disponibles para la máquina en este período.");
+          const chartContainer = document.getElementById('lineChart').parentElement;
+          if (chartContainer) {
+              chartContainer.innerHTML = '<p class="text-center text-muted">No hay datos para mostrar en este período.</p>';
+          } else {
+              document.body.innerHTML = '<p class="text-center text-muted">No hay datos para mostrar en este período.</p>';
+          }
+          return;
+      }
+
+
+      const timeSeries = data.map(d => new Date(d.time));
+      const mOn = data.map(d => d.mOn);
+      const mWo = data.map(d => d.mWo);
+
+      const encendidaData = timeSeries.map((t, i) => ({ x: t, y: mOn[i] === 1 ? 1 : 0 }));
+      const produciendoData = timeSeries.map((t, i) => ({ x: t, y: mWo[i] === 1 ? 0.8 : 0 }));
+
+      const fullChartHeight = 1.1;
+
+      const apagadaBackgroundData = data.map(d => ({
+          x: new Date(d.time),
+          y: (d.mOn === 0) ? fullChartHeight : 0
+      }));
+
+      const encendidaSinProducirBackgroundData = data.map(d => ({
+          x: new Date(d.time),
+          y: (d.mOn === 1 && d.mWo === 0) ? fullChartHeight : 0
+      }));
+
+      const produciendoBackgroundData = data.map(d => ({
+          x: new Date(d.time),
+          y: (d.mOn === 1 && d.mWo === 1) ? fullChartHeight : 0
+      }));
+
+      const ctx = document.getElementById('lineChart').getContext('2d');
+
+      if (Chart.getChart(ctx)) {
+          Chart.getChart(ctx).destroy();
+      }
+
+      new Chart(ctx, {
+          type: 'line',
+          data: {
+              datasets: [
+                  {
+                      label: 'Fondo Encendida sin producir',
+                      data: encendidaSinProducirBackgroundData,
+                      backgroundColor: 'rgba(255, 0, 0, 0.2)',
+                      borderColor: 'transparent',
+                      fill: 'origin',
+                      stepped: true,
+                      pointRadius: 0,
+                      order: 2,
+                      hidden: false,
+                      pointHoverRadius: 0,
+                  },
+                  {
+                      label: 'Fondo Produciendo',
+                      data: produciendoBackgroundData,
+                      backgroundColor: 'rgba(0, 128, 0, 0.2)',
+                      borderColor: 'transparent',
+                      fill: 'origin',
+                      stepped: true,
+                      pointRadius: 0,
+                      order: 1,
+                      hidden: false,
+                      pointHoverRadius: 0,
+                  },
+                  {
+                      label: 'Encendida',
+                      data: encendidaData,
+                      stepped: true,
+                      borderColor: '#4caf50',
+                      pointRadius: 0,
+                  },
+                  {
+                      label: 'Produciendo',
+                      data: produciendoData,
+                      stepped: true,
+                      borderColor: '#2196f3',
+                      pointRadius: 0,
+                  }
+              ]
+          },
+          options: {
+
+              adapters: { date: { zone: 'utc' } },
+              interaction: { mode: 'index', intersect: false },
+              plugins: {
+                  title: {
+                      display: true,
+                      text: chartTitle
+                  },
+                  tooltip: {
+                      callbacks: {
+              
+                          title(items) {
+                              const x = items[0]?.parsed?.x ?? items[0]?.raw?.x ?? items[0]?.label;
+                              return toDATE(x);
+                          },
+                          label(ctx) {
+                              const y = ctx.parsed.y;
+                              if (y === 1) return 'Encendida';
+                              if (y === 0.8) return 'Produciendo';
+                              return 'Apagada';
+                          }
+                      }
+                  },
+                  legend: {
+                      display: true,
+                      labels: {
+                          filter: function(legendItem) {
+                              return !legendItem.text.startsWith('Fondo ');
+                          }
+                      }
+                  }
+              },
+              scales: {
+                  x: {
+                      type: 'time',
+                      time: {
+                          unit: 'hour',
+                          displayFormats: { hour: 'HH:mm' } 
+                      },
+                      ticks: {
+                          autoSkip: false,
+            
+                          callback: (v, i, ticks) => {
+                              const raw = (ticks?.[i]?.value !== undefined) ? ticks[i].value : v;
+                              const ts = (typeof raw === 'number') ? raw : Date.parse(raw);
+                              if (!Number.isFinite(ts)) return '';
+                              return toHOUR(ts);
+                          }
+                      },
+                      title: { display: true, text: 'Hora' } // <<< aclaramos unidad
+                  },
+                  y: {
+                      min: 0,
+                      max: 1.1,
+                      ticks: {
+                          callback: v => {
+                              if (v === 1) return 'Encendida';
+                              if (v === 0.8) return 'Produciendo';
+                              if (v === 0) return 'Apagada';
+                              return '';
+                          }
+                      },
+                      title: { display: true, text: 'Estado' }
+                  }
+              }
+          }
+      });
+
+      // Resumen textual
+      const resumen = { encendida: 0, produciendo: 0, apagada: 0 };
+      data.forEach(d => {
+          if (d.mOn === 0) resumen.apagada++;
+          else if (d.mWo === 1) resumen.produciendo++;
+          else resumen.encendida++;
+      });
+
+      const totalm = data.length;
+      const totalMin = totalm * 3;
+      const crearLinea = (nombre, valor) => {
+          const min = valor * 3;
+          const pct = ((min / totalMin) * 100).toFixed(1);
+          return `<strong>${nombre}</strong>: ${min} min (${pct}%)`;
+      };
+
+
+      const fechaIniFormateada = formatFull(timeSeries[0]);
+      const fechaFinFormateada = formatFull(timeSeries[data.length - 1]);
+
+      const resumenHTML = `
+          <div class="alert alert-light mt-4">
+              <h5 class="mb-2">Resumen del turno:</h5>
+              ${crearLinea('Produciendo', resumen.produciendo)}<br>
+              ${crearLinea('Encendida sin producir', resumen.encendida)}<br>
+              ${crearLinea('Apagada', resumen.apagada)}<br>
+              <strong>Primer muestra</strong>: ${fechaIniFormateada}<br>
+              <strong>Última muestra</strong>: ${fechaFinFormateada}<br>
+              <strong>Total de muestras</strong>: ${totalm}<br>
+          </div>
+      `;
+      const oldResumen = document.querySelector(".container > .alert");
+      if (oldResumen) {
+          oldResumen.remove();
+      }
+      document.querySelector(".container").insertAdjacentHTML("beforeend", resumenHTML);
+  }
+
+  document.addEventListener('DOMContentLoaded', fetchData);
+</script>
+
+
+<!-- <script>
   async function fetchData() {
       const urlParams = new URLSearchParams(window.location.search);
       const date = urlParams.get('date');
@@ -271,5 +560,5 @@
   }
 
   document.addEventListener('DOMContentLoaded', fetchData);
-</script>
+</script> -->
 {% endblock %}

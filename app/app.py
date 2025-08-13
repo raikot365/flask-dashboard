@@ -231,8 +231,8 @@ def api_vista():
         if end.tzinfo is None:
             end = argentina_tz.localize(end)
 
-        start_utc = start.astimezone(utc_tz)
-        end_utc   = end.astimezone(utc_tz)
+        # start_utc = start.astimezone(utc_tz)
+        # end_utc   = end.astimezone(utc_tz)
 
         label = f"{start.strftime('%Y-%m-%d %H:%M')} \u2192 {end.strftime('%Y-%m-%d %H:%M')}"
     
@@ -254,10 +254,10 @@ def api_vista():
         end_day = d + timedelta(days=1) if selected_turno == 'TN' else d
         end_naive = datetime.combine(end_day, datetime.strptime(shifts[selected_turno][1], "%H:%M:%S").time())
 
-        start_local = argentina_tz.localize(start_naive)
-        end_local   = argentina_tz.localize(end_naive)
-        start_utc = start_local.astimezone(utc_tz)
-        end_utc   = end_local.astimezone(utc_tz)
+        start = argentina_tz.localize(start_naive)
+        end = argentina_tz.localize(end_naive)
+        # start_utc = start_local.astimezone(utc_tz)
+        # end_utc   = end_local.astimezone(utc_tz)
         label = f"{selected_date} - Turno {selected_turno}"
 
     # Consulta SQL entre start_utc y end_utc
@@ -267,8 +267,9 @@ def api_vista():
             FROM registros
             WHERE time >= :s AND time < :e
         """),
-        eng, params={"s": start_utc, "e": end_utc}
-    )
+
+        eng, params={"s": start, "e": end}
+    )        # eng, params={"s": start_utc, "e": end_utc}
 
     if raw_df.empty:
         return jsonify({"data": [], "label": label})
@@ -339,8 +340,8 @@ def api_maquina(m):
     else:
         abort(400, "Faltan parámetros")
 
-    start_utc = start_local.astimezone(utc_tz)
-    end_utc   = end_local.astimezone(utc_tz)
+    # start_utc = start_local.astimezone(utc_tz)
+    # end_utc   = end_local.astimezone(utc_tz)
 
     eng = get_engine()
     with eng.connect() as c:
@@ -351,16 +352,17 @@ def api_maquina(m):
                 WHERE m=:m AND time>=:s AND time<:e
                 ORDER BY time
             """),
-            c, params={"m": m, "s": start_utc, "e": end_utc}
-        )
+            c, params={"m": m, "s": start_local, "e": end_local}
+        ) #c, params={"m": m, "s": start_utc, "e": end_utc}
 
     if df.empty:
         return jsonify({"maquina": m, "data": []})
 
     # pd.to_datetime ya infiere TZ si es ambigua con 'infer', y se convierte a la TZ local.
-    df["time"] = pd.to_datetime(df["time"]).dt.tz_localize(utc_tz, ambiguous='infer', nonexistent='shift_forward') \
-                                         .dt.tz_convert(argentina_tz) \
-                                         .apply(lambda x: x.isoformat())
+
+    # df["time"] = pd.to_datetime(df["time"]).dt.tz_localize(utc_tz, ambiguous='infer', nonexistent='shift_forward') \
+    #                                      .dt.tz_convert(argentina_tz) \
+    #                                      .apply(lambda x: x.isoformat())
     
     return jsonify({"maquina": m, "data": df.to_dict("records")})
 
@@ -417,8 +419,8 @@ def maquinas():
             start = argentina_tz.localize(start)
         if end.tzinfo is None:
             end = argentina_tz.localize(end)
-        start_utc = start.astimezone(utc_tz)
-        end_utc   = end.astimezone(utc_tz)
+        # start_utc = start.astimezone(utc_tz)
+        # end_utc   = end.astimezone(utc_tz)
 
     # Modo fecha+turno
     else:
@@ -444,8 +446,8 @@ def maquinas():
 
         start = argentina_tz.localize(start_naive)
         end   = argentina_tz.localize(end_naive)
-        start_utc = start.astimezone(utc_tz)
-        end_utc   = end.astimezone(utc_tz)
+        # start_utc = start.astimezone(utc_tz)
+        # end_utc   = end.astimezone(utc_tz)
 
     # Consulta máquinas distintas en el intervalo
     with eng.connect() as conn:
@@ -455,8 +457,8 @@ def maquinas():
                 FROM registros
                 WHERE time >= :s AND time < :e
                 ORDER BY m
-            """), {"s": start_utc, "e": end_utc}
-        ).fetchall()
+            """), {"s": start, "e": end}
+        ).fetchall() # {"s": start_utc, "e": end_utc}
     maquinas = [r[0] for r in rows]
 
     return render_template(
