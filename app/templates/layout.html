@@ -19,7 +19,7 @@
         <i class="bi bi-kanban-fill"></i> Vista temporal
       </button>
       {% elif request.endpoint == 'maquinas' %}
-        <a id="navTortasBtn" class="btn btn-outline-light ms-3" title="Volver a la vista de tortas">
+        <a id="navTortasBtn" class="btn btn-outline-light ms-3" title="Volver a la vista de tortas" href="{{ url_for('index') }}">
           <i class="bi bi-pie-chart-fill"></i> Vista tortas
         </a>
       {% endif %}

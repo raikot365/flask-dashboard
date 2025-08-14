@@ -1,5 +1,43 @@
 {% extends "layout.html" %}
 {% block body %}
+
+<div class="container my-4" style="max-width: 1200px;">
+    <div class="row mb-3">
+        <div class="col-md-5">
+            <input type="date" id="datePicker" class="form-control" value="{{ initial_date }}">
+        </div>
+        <div class="col-md-5">
+            <select id="turnoSelect" class="form-select">
+                <option value="TM" {% if initial_turno == 'TM' %}selected{% endif %}>Mañana (7-15hs)</option>
+                <option value="TT" {% if initial_turno == 'TT' %}selected{% endif %}>Tarde (15-23hs)</option>
+                <option value="TN" {% if initial_turno == 'TN' %}selected{% endif %}>Noche (23-7hs)</option>
+            </select>
+        </div>
+        <div class="col-md-2">
+            <button id="filterBtn" class="btn btn-primary w-100">Filtrar por turno</button>
+        </div>
+
+    </div>
+
+    <div class="row mb-3">
+        <div class="col-md-5">
+            <label for="startDate" style="margin-right: 5px;">Fecha y hora inicio</label>
+            {# Modificado: Usar default('') para que sea una cadena vacía si initial_start es None #}
+            <input type="datetime-local" id="startDate" class="form-control" value="{{ initial_start | default('') }}">
+        </div>
+        <div class="col-md-5">
+            <label for="endDate" style="margin-right: 5px;">Fecha y hora fin</label>
+            {# Modificado: Usar default('') para que sea una cadena vacía si initial_end es None #}
+            <input type="datetime-local" id="endDate" class="form-control" value="{{ initial_end | default('') }}">
+        </div>
+        <div class="col-md-2 d-flex align-items-end">
+            <button id="customRangeBtn" class="btn btn-outline-primary w-100">Consultar rango libre</button>
+        </div>
+    </div>
+
+    <div class="row" id="chartsContainer"></div>
+</div>
+
 <div class="container mt-4">
   <div id="checkboxes-maquinas" class="d-flex flex-wrap gap-2 mb-4">
     {% for m in maquinas %}
@@ -41,348 +79,340 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0"></script> -->
 
 <script>
-  // --- Helpers ---------------------------------------------------------
-  function toHOUR(x) {
-      const d = (x instanceof Date) ? x : new Date(typeof x === 'number' ? x : Date.parse(x));
-      let hh = d.getUTCHours();
-      const mm = String(d.getUTCMinutes()).padStart(2, '0');
-      const ampm = hh >= 12 ? 'pm' : 'am';
-      hh = hh % 12 || 12;
-      hh = String(hh).padStart(2, '0');
-      return `${hh}:${mm} ${ampm}     `;
+  /* ---------- Helpers (idénticos) ---------- */
+function toHOUR(x) {
+  const d = (x instanceof Date) ? x : new Date(typeof x === 'number' ? x : Date.parse(x));
+  let hh = d.getUTCHours();
+  const mm = String(d.getUTCMinutes()).padStart(2, '0');
+  const ampm = hh >= 12 ? 'pm' : 'am';
+  hh = hh % 12 || 12;
+  hh = String(hh).padStart(2, '0');
+  return `${hh}:${mm} ${ampm}`;
+}
+function toDATE(x) {
+  const d = (x instanceof Date) ? d = x : new Date(typeof x === 'number' ? x : Date.parse(x));
+  const dd = String(d.getUTCDate()).padStart(2,'0');
+  const mo = String(d.getUTCMonth()+1).padStart(2,'0');
+  const yy = d.getUTCFullYear();
+  let hh = d.getUTCHours();
+  const mm = String(d.getUTCMinutes()).padStart(2,'0');
+  const ss = String(d.getUTCSeconds()).padStart(2,'0');
+  const ampm = hh >= 12 ? 'pm' : 'am';
+  hh = hh % 12 || 12;
+  hh = String(hh).padStart(2,'0');
+  return `${dd}/${mo}/${yy} ${hh}:${mm}:${ss} ${ampm}`;
+}
+function formatFull(d) {
+  const dd = String(d.getUTCDate()).padStart(2,'0');
+  const mo = String(d.getUTCMonth()+1).padStart(2,'0');
+  const yy = d.getUTCFullYear();
+  const hh = String(d.getUTCHours()).padStart(2,'0');
+  const mm = String(d.getUTCMinutes()).padStart(2,'0');
+  const ss = String(d.getUTCSeconds()).padStart(2,'0');
+  return `${dd}/${mo}/${yy} ${hh}:${mm}:${ss}`;
+}
+/* ----------------------------------------- */
+
+
+/* Valores que el servidor puede haber inyectado (si existen) — se usan como fallback */
+const JINJA_initial_date  = {{ initial_date | default('') | tojson }};
+const JINJA_initial_turno = {{ initial_turno | default('') | tojson }};
+const JINJA_initial_start = {{ initial_start | default('') | tojson }};
+const JINJA_initial_end   = {{ initial_end | default('') | tojson }};
+
+/* Lista actual de máquinas — inicialmente la que Jinja inyectó (si la inyectó) */
+let currentMachines = {{ maquinas | tojson | safe }};
+
+function getParamsFromControls() {
+  return {
+    date: document.getElementById('datePicker')?.value || "",
+    turno: document.getElementById('turnoSelect')?.value || "",
+    start: document.getElementById('startDate')?.value || "",
+    end: document.getElementById('endDate')?.value || ""
+  };
+}
+
+function updateURL(params) {
+  const ps = new URLSearchParams();
+  if (params.start && params.end) {
+    ps.set('start', params.start);
+    ps.set('end', params.end);
+  } else if (params.date && params.turno) {
+    ps.set('date', params.date);
+    ps.set('turno', params.turno);
   }
+  const qs = ps.toString();
+  const newUrl = qs ? `${location.pathname}?${qs}` : location.pathname;
+  history.replaceState(null, '', newUrl);
 
-  function toDATE(x) {
-      const d = (x instanceof Date) ? x : new Date(typeof x === 'number' ? x : Date.parse(x));
-      const dd = String(d.getUTCDate()).padStart(2,'0');
-      const mo = String(d.getUTCMonth()+1).padStart(2,'0');
-      const yy = d.getUTCFullYear();
-      let hh = d.getUTCHours();
-      const mm = String(d.getUTCMinutes()).padStart(2,'0');
-      const ss = String(d.getUTCSeconds()).padStart(2,'0');
-      const ampm = hh >= 12 ? 'pm' : 'am';
-      hh = hh % 12 || 12;
-      hh = String(hh).padStart(2,'0');
-      return `${dd}/${mo}/${yy} ${hh}:${mm}:${ss} ${ampm}`;
+  // <-- cambio importante: navTortas debe apuntar al INDEX (/) con los mismos params,
+  // NO a la ruta actual (location.pathname).
+  const btn = document.getElementById('navTortasBtn');
+  if (btn) {
+    const indexHref = qs ? `/?${qs}` : '/';
+    btn.setAttribute('href', indexHref);
   }
+}
 
-  function formatFull(d) {
-      const dd = String(d.getUTCDate()).padStart(2,'0');
-      const mo = String(d.getUTCMonth()+1).padStart(2,'0');
-      const yy = d.getUTCFullYear();
-      const hh = String(d.getUTCHours()).padStart(2,'0');
-      const mm = String(d.getUTCMinutes()).padStart(2,'0');
-      const ss = String(d.getUTCSeconds()).padStart(2,'0');
-      return `${dd}/${mo}/${yy} ${hh}:${mm}:${ss}`;
+/* API: pedir lista de máquinas */
+async function fetchMachines(params) {
+  let qs = "";
+  if (params.start && params.end) {
+    qs = `?start=${encodeURIComponent(params.start)}&end=${encodeURIComponent(params.end)}`;
+  } else if (params.date && params.turno) {
+    qs = `?date=${encodeURIComponent(params.date)}&turno=${encodeURIComponent(params.turno)}`;
+  } else {
+    return { maquinas: [], start: null, end: null, label: "" };
   }
-  // -------------------------------------------------------------------------
+  const res = await fetch(`/api/maquinas${qs}`);
+  if (!res.ok) throw new Error('Error al obtener máquinas');
+  return await res.json();
+}
 
-  const maquinas = {{ maquinas|tojson|safe }};
-  
-  function toggleMaquina(m) {
-    const block = document.getElementById(`maquina-block-${m}`);
-    const chk   = document.getElementById(`check-${m}`);
-    block.style.display = chk.checked ? '' : 'none';
-  }
+/* Render DOM: checkboxes + bloques */
+function renderMachineBlocks(maquinas) {
+  const boxes = document.getElementById('checkboxes-maquinas');
+  const list  = document.getElementById('maquinas-list');
+  boxes.innerHTML = '';
+  list.innerHTML = '';
 
-  async function fetchAndRender(m) {
-    const urlParams = new URLSearchParams(window.location.search);
-    const date  = urlParams.get('date');
-    const turno = urlParams.get('turno');
-    const start = urlParams.get('start');
-    const end   = urlParams.get('end');
+  maquinas.forEach(m => {
+    // checkbox wrapper
+    const chkWrapper = document.createElement('div');
+    chkWrapper.className = "form-check btn-secondary";
+    chkWrapper.style = "padding:3px 5px 3px 30px; border-radius:6px; margin-right:6px;";
 
-    let apiUrl;
-    if (start && end) {
-      apiUrl = `/api/maquina/${m}?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`;
-    } else if (date && turno) {
-      apiUrl = `/api/maquina/${m}?date=${encodeURIComponent(date)}&turno=${encodeURIComponent(turno)}`;
-    } else return;
+    const input = document.createElement('input');
+    input.className = "form-check-input";
+    input.type = "checkbox";
+    input.id = `check-${m}`;
+    input.checked = true;
 
-    const res = await fetch(apiUrl);
-    const parent = document.getElementById(`chart-${m}`).parentElement;
-    if (!res.ok) { parent.innerHTML='<p class="text-center text-muted">Error al obtener datos.</p>'; return; }
-
-    const { data } = await res.json();
-    if (!data || data.length===0) { parent.innerHTML='<p class="text-center text-muted">No hay datos.</p>'; return; }
-
-    // Normalizamos todas las fechas a UTC como timestamps numéricos
-    const timesUTC = data.map(d => {
-      const dt = new Date(d.time);
-      return Date.UTC(
-        dt.getUTCFullYear(),
-        dt.getUTCMonth(),
-        dt.getUTCDate(),
-        dt.getUTCHours(),
-        dt.getUTCMinutes(),
-        dt.getUTCSeconds()
-      );
+    // SOLO toggle visual — NO dispara fetch
+    input.addEventListener('change', () => {
+      const block = document.getElementById(`maquina-block-${m}`);
+      if (block) block.style.display = input.checked ? '' : 'none';
     });
 
-    const mOn = data.map(d => d.mOn);
-    const mWo = data.map(d => d.mWo);
-    const fullH = 1.1;
+    const label = document.createElement('label');
+    label.className = "form-check-label";
+    label.htmlFor = `check-${m}`;
+    label.textContent = ` Máquina Nº ${m}`;
 
-    const datasets = [
-      { label:'Fondo Encendida sin producir', data: data.map((d,i)=>({x:timesUTC[i],y:d.mOn===1&&d.mWo===0?fullH:0})), backgroundColor:'rgba(255,0,0,0.2)', borderColor:'transparent', fill:'origin', stepped:true, pointRadius:0, order:2 },
-      { label:'Fondo Produciendo', data: data.map((d,i)=>({x:timesUTC[i],y:d.mOn===1&&d.mWo===1?fullH:0})), backgroundColor:'rgba(0,128,0,0.2)', borderColor:'transparent', fill:'origin', stepped:true, pointRadius:0, order:1 },
-      { label:'Encendida', data:mOn.map((v,i)=>({x:timesUTC[i],y:v===1?1:0})), stepped:true, borderColor:'#4caf50', pointRadius:0 },
-      { label:'Produciendo', data:mWo.map((v,i)=>({x:timesUTC[i],y:v===1?0.8:0})), stepped:true, borderColor:'#2196f3', pointRadius:0 }
-    ];
+    chkWrapper.appendChild(input);
+    chkWrapper.appendChild(label);
+    boxes.appendChild(chkWrapper);
 
-    const ctx = document.getElementById(`chart-${m}`).getContext('2d');
-    if (Chart.getChart(ctx)) Chart.getChart(ctx).destroy();
-
-    new Chart(ctx, {
-      type:'line',
-      data:{ datasets },
-      options:{
-        adapters:{ date:{ zone:'utc' } },
-        interaction:{ mode:'index', intersect:false },
-        plugins:{
-          title:{ display:true, text: start&&end?`Máquina ${m} — ${start} → ${end}`:`Máquina ${m} — ${date} - ${turno}` },
-          tooltip:{ callbacks:{
-            title: items => toDATE(items[0]?.parsed?.x ?? items[0]?.raw?.x ?? items[0]?.label),
-            label: ctx => { const y=ctx.parsed.y; if(y===1) return 'Encendida'; if(y===0.8) return 'Produciendo'; return 'Apagada'; }
-          }},
-          legend:{ labels:{ filter: item => !item.text.startsWith('Fondo ') } }
-        },
-        scales:{
-          x:{ type:'time', time:{ unit:'hour', displayFormats:{ hour:'HH:mm' } },
-              ticks:{ autoSkip:false, callback:(v,i,ticks)=> toHOUR(ticks[i].value) },
-              title:{ display:true, text:'Hora' }
-          },
-          y:{ min:0, max:1.1,
-              ticks:{ callback:v=>{ if(v===1)return'Encendida'; if(v===0.8)return'Produciendo'; if(v===0)return'Apagada'; return ''; } },
-              title:{ display:true, text:'Estado' }
-          }
-        }
-      }
-    });
-
-    // Resumen
-    const resumen = { apagada:0, encendida:0, produciendo:0 };
-    data.forEach(d=>{ if(d.mOn===0) resumen.apagada++; else if(d.mWo===1) resumen.produciendo++; else resumen.encendida++; });
-
-    const total = data.length;
-    const totalMin = total*3;
-    const lineHTML = (n,v)=>{ const mins=v*3; const pct=((mins/totalMin)*100).toFixed(1); return `<strong>${n}</strong>: ${mins} min (${pct}%)`; };
-
-    const fechaIni = formatFull(new Date(timesUTC[0]));
-    const fechaFin = formatFull(new Date(timesUTC[total-1]));
-
-    document.getElementById(`resumen-${m}`).innerHTML = `
-      <div class="alert alert-light mt-2">
-        ${lineHTML('Produciendo', resumen.produciendo)}<br>
-        ${lineHTML('Encendida sin producir', resumen.encendida)}<br>
-        ${lineHTML('Apagada', resumen.apagada)}<br>
-        <strong>Inicio:</strong> ${fechaIni}<br>
-        <strong>Fin:</strong> ${fechaFin}<br>
-        <strong># muestras:</strong> ${total}
+    // bloque de maquina
+    const block = document.createElement('div');
+    block.className = "maquina-block mb-5";
+    block.id = `maquina-block-${m}`;
+    block.innerHTML = `
+      <div class="row align-items-start">
+        <div class="col-md-8">
+          <h6 class="text-center">Máquina ${m}</h6>
+          <canvas id="chart-${m}" height="100"></canvas>
+        </div>
+        <div class="col-md-4">
+          <div id="resumen-${m}"></div>
+        </div>
       </div>
     `;
+    list.appendChild(block);
+  });
+}
+
+/* Fetch y render de un gráfico individual */
+async function fetchAndRender(m, params) {
+  let apiUrl;
+  if (params.start && params.end) {
+    apiUrl = `/api/maquina/${m}?start=${encodeURIComponent(params.start)}&end=${encodeURIComponent(params.end)}`;
+  } else if (params.date && params.turno) {
+    apiUrl = `/api/maquina/${m}?date=${encodeURIComponent(params.date)}&turno=${encodeURIComponent(params.turno)}`;
+  } else {
+    const parent = document.getElementById(`chart-${m}`)?.parentElement;
+    if (parent) parent.innerHTML = '<p class="text-center text-muted">Seleccione una fecha/turno o un rango.</p>';
+    return;
   }
 
-  window.addEventListener('DOMContentLoaded', () => { maquinas.forEach(m => fetchAndRender(m)); });
+  const res = await fetch(apiUrl);
+  const parent = document.getElementById(`chart-${m}`).parentElement;
+  if (!res.ok) { parent.innerHTML='<p class="text-center text-muted">Error al obtener datos.</p>'; return; }
 
-  document.addEventListener('DOMContentLoaded', () => {
-    const btn = document.getElementById('navTortasBtn');
-    if (btn) {
-      const urlParams = new URLSearchParams(window.location.search);
-      const date  = urlParams.get('date');
-      const turno = urlParams.get('turno');
-      const start = urlParams.get('start');
-      const end   = urlParams.get('end');
-      let href;
+  const payload = await res.json();
+  const data = payload.data || [];
+  if (!data || data.length===0) { parent.innerHTML='<p class="text-center text-muted">No hay datos.</p>'; return; }
 
-      if (start && end) {
-        href = `/?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`;
-      } else if (date && turno) {
-        href = `/?date=${encodeURIComponent(date)}&turno=${encodeURIComponent(turno)}`;
-      } else {
-        href = '/';
+  const timesUTC = data.map(d => {
+    const dt = new Date(d.time);
+    return Date.UTC(
+      dt.getUTCFullYear(),
+      dt.getUTCMonth(),
+      dt.getUTCDate(),
+      dt.getUTCHours(),
+      dt.getUTCMinutes(),
+      dt.getUTCSeconds()
+    );
+  });
+
+  const mOn = data.map(d => d.mOn);
+  const mWo = data.map(d => d.mWo);
+  const fullH = 1.1;
+
+  const datasets = [
+    { label:'Fondo Encendida sin producir', data: data.map((d,i)=>({x:timesUTC[i],y:d.mOn===1&&d.mWo===0?fullH:0})), backgroundColor:'rgba(255,0,0,0.2)', borderColor:'transparent', fill:'origin', stepped:true, pointRadius:0, order:2 },
+    { label:'Fondo Produciendo', data: data.map((d,i)=>({x:timesUTC[i],y:d.mOn===1&&d.mWo===1?fullH:0})), backgroundColor:'rgba(0,128,0,0.2)', borderColor:'transparent', fill:'origin', stepped:true, pointRadius:0, order:1 },
+    { label:'Encendida', data:mOn.map((v,i)=>({x:timesUTC[i],y:v===1?1:0})), stepped:true, borderColor:'#4caf50', pointRadius:0 },
+    { label:'Produciendo', data:mWo.map((v,i)=>({x:timesUTC[i],y:v===1?0.8:0})), stepped:true, borderColor:'#2196f3', pointRadius:0 }
+  ];
+
+  const ctx = document.getElementById(`chart-${m}`).getContext('2d');
+  if (Chart.getChart(ctx)) Chart.getChart(ctx).destroy();
+
+  const titleText = (params.start && params.end) ? `Máquina ${m} - ${params.start} → ${params.end}` : `Máquina ${m} - ${params.date} - ${params.turno}`;
+
+  new Chart(ctx, {
+    type:'line',
+    data:{ datasets },
+    options:{
+      adapters:{ date:{ zone:'utc' } },
+      interaction:{ mode:'index', intersect:false },
+      plugins:{
+        title:{ display:true, text: titleText },
+        tooltip:{ callbacks:{
+          title: items => toDATE(items[0]?.parsed?.x ?? items[0]?.raw?.x ?? items[0]?.label),
+          label: ctx => { const y=ctx.parsed.y; if(y===1) return 'Encendida'; if(y===0.8) return 'Produciendo'; return 'Apagada'; }
+        }},
+        legend:{ labels:{ filter: item => !item.text.startsWith('Fondo ') } }
+      },
+      scales:{
+        x:{ type:'time', time:{ unit:'hour', displayFormats:{ hour:'HH:mm' } },
+            ticks:{ autoSkip:false, callback:(v,i,ticks)=> toHOUR(ticks[i].value) },
+            title:{ display:true, text:'Hora' }
+        },
+        y:{ min:0, max:1.1,
+            ticks:{ callback:v=>{ if(v===1)return'Encendida'; if(v===0.8)return'Produciendo'; if(v===0)return'Apagada'; return ''; } },
+            title:{ display:true, text:'Estado' }
+        }
       }
-
-      btn.setAttribute('href', href);
     }
   });
-</script>
 
-<!-- <script>
+  // Resumen
+  const resumen = { apagada:0, encendida:0, produciendo:0 };
+  data.forEach(d=>{ if(d.mOn===0) resumen.apagada++; else if(d.mWo===1) resumen.produciendo++; else resumen.encendida++; });
+
+  const total = data.length;
+  const totalMin = total*3;
+  const lineHTML = (n,v)=>{ const mins=v*3; const pct=((mins/totalMin)*100).toFixed(1); return `<strong>${n}</strong>: ${mins} min (${pct}%)`; };
+
+  const fechaIni = formatFull(new Date(timesUTC[0]));
+  const fechaFin = formatFull(new Date(timesUTC[total-1]));
+
+  document.getElementById(`resumen-${m}`).innerHTML = `
+    <div class="alert alert-light mt-2">
+      ${lineHTML('Produciendo', resumen.produciendo)}<br>
+      ${lineHTML('Encendida sin producir', resumen.encendida)}<br>
+      ${lineHTML('Apagada', resumen.apagada)}<br>
+      <strong>Inicio:</strong> ${fechaIni}<br>
+      <strong>Fin:</strong> ${fechaFin}<br>
+      <strong># muestras:</strong> ${total}
+    </div>
+  `;
+}
+
+/* updateAllCharts: pide máquinas y pinta (se ejecuta solo con botón o en carga inicial si hay parámetros) */
+async function updateAllCharts() {
+  try {
+    const params = getParamsFromControls();
+    const meta = await fetchMachines(params);
+    currentMachines = meta.maquinas || [];
+    renderMachineBlocks(currentMachines);
+    updateURL(params);
+    currentMachines.forEach(m => {
+      const chk = document.getElementById(`check-${m}`);
+      if (!chk || !chk.checked) return;
+      fetchAndRender(m, params).catch(err => {
+        console.error("Error fetchAndRender:", err);
+        const parent = document.getElementById(`chart-${m}`)?.parentElement;
+        if (parent) parent.innerHTML = '<p class="text-center text-muted">Error al obtener datos.</p>';
+      });
+    });
+  } catch (err) {
+    console.error("Error updateAllCharts:", err);
+  }
+}
+
+/* ------------------ Inicialización (DOMContentLoaded) ------------------ */
+window.addEventListener('DOMContentLoaded', () => {
+  // 1) Leer parámetros desde la URL (preservar en caso de F5 o venir desde index)
   const urlParams = new URLSearchParams(window.location.search);
-  const date  = urlParams.get('date');
-  const turno = urlParams.get('turno');
-  const start = urlParams.get('start');
-  const end   = urlParams.get('end');
-  const maquinas = {{ maquinas|tojson|safe }};
+  const url_date  = urlParams.get('date');    // null si no está
+  const url_turno = urlParams.get('turno');
+  const url_start = urlParams.get('start');
+  const url_end   = urlParams.get('end');
 
-  function toggleMaquina(m) {
-    const block = document.getElementById(`maquina-block-${m}`);
-    const chk   = document.getElementById(`check-${m}`);
-    block.style.display = chk.checked ? '' : 'none';
+  // 2) Decidir valores efectivos: preferir los de la URL, si no están usar los inyectados por Jinja
+  const effective_date  = (url_date !== null) ? url_date : (JINJA_initial_date || "");
+  const effective_turno = (url_turno !== null) ? url_turno : (JINJA_initial_turno || "");
+  const effective_start = (url_start !== null) ? url_start : (JINJA_initial_start || "");
+  const effective_end   = (url_end !== null) ? url_end : (JINJA_initial_end || "");
+
+  // 3) Escribir esos valores en los inputs DOM (si existen)
+  const datePicker = document.getElementById('datePicker');
+  const turnoSelect = document.getElementById('turnoSelect');
+  const startDate = document.getElementById('startDate');
+  const endDate = document.getElementById('endDate');
+
+  if (datePicker) datePicker.value = effective_date;
+  if (turnoSelect) turnoSelect.value = effective_turno;
+  if (startDate) startDate.value = effective_start;
+  if (endDate) endDate.value = effective_end;
+
+  // 4) Si hay parámetros válidos (start+end) o (date+turno), hacer carga inicial automática.
+  const hasRange = effective_start !== "" && effective_end !== "";
+  const hasTurn  = effective_date !== "" && effective_turno !== "";
+  if (hasRange || hasTurn) {
+    // solo en este caso hacemos la carga inicial automática (útil para F5 y para venir desde index)
+    updateAllCharts();
+  } else {
+    // No hay parámetros: dejamos la UI lista para que el usuario presione los botones.
+    // Opcional: podemos renderizar una ayuda visual:
+    const boxes = document.getElementById('checkboxes-maquinas');
+    const list  = document.getElementById('maquinas-list');
+    if (boxes) boxes.innerHTML = '';
+    if (list) list.innerHTML = '<div class="alert alert-info">Seleccione un turno+fecha o un rango y presione "Filtrar" o "Consultar rango libre".</div>';
   }
 
-  async function fetchAndRender(m) {
-    let apiUrl;
-    if (start && end) {
-      apiUrl = `/api/maquina/${m}?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`;
-    } else if (date && turno) {
-      apiUrl = `/api/maquina/${m}?date=${encodeURIComponent(date)}&turno=${encodeURIComponent(turno)}`;
-    } else {
-      return;
-    }
+  /* ---------- Botones: solo estos disparan updateAllCharts ---------- */
+  const filterBtn = document.getElementById('filterBtn');
+  const customRangeBtn = document.getElementById('customRangeBtn');
 
-    const res = await fetch(apiUrl);
-    const parent = document.getElementById(`chart-${m}`).parentElement;
-    if (!res.ok) {
-      parent.innerHTML = '<p class="text-center text-muted">Error al obtener datos.</p>';
-      return;
-    }
-
-    const { data } = await res.json();
-    if (!data || data.length === 0) {
-      parent.innerHTML = '<p class="text-center text-muted">No hay datos.</p>';
-      return;
-    }
-
-    // Prepara series
-    const times = data.map(d => new Date(d.time));
-    const mOn   = data.map(d => d.mOn);
-    const mWo   = data.map(d => d.mWo);
-    const fullH = 1;
-    const datasets = [
-      {
-        label: 'Fondo Encendida sin producir',
-        data: data.map(d => ({ x: new Date(d.time),
-                               y: d.mOn===1 && d.mWo===0 ? fullH : 0 })),
-        backgroundColor: 'rgba(255, 0, 0, 0.2)',
-        borderColor: 'transparent', fill:'origin',
-        stepped:true, pointRadius:0, order:2
-      },
-      {
-        label: 'Fondo Produciendo',
-        data: data.map(d => ({ x: new Date(d.time),
-                               y: d.mOn===1 && d.mWo===1 ? fullH : 0 })),
-        backgroundColor: 'rgba(0,128,0,0.2)',
-        borderColor: 'transparent', fill:'origin',
-        stepped:true, pointRadius:0, order:1
-      },
-      {
-        label: 'Encendida',
-        data: times.map((t,i)=>({x:t,y: mOn[i]===1?1:0})),
-        stepped:true, borderColor:'#4caf50', pointRadius:0, order:0
-      },
-      {
-        label: 'Produciendo',
-        data: times.map((t,i)=>({x:t,y: mWo[i]===1?0.8:0})),
-        stepped:true, borderColor:'#2196f3', pointRadius:0, order:0
-      }
-    ];
-
-    const ctx = document.getElementById(`chart-${m}`).getContext('2d');
-    if (Chart.getChart(ctx)) Chart.getChart(ctx).destroy();
-
-    new Chart(ctx, {
-      type: 'line',
-      data: { datasets },
-      options: {
-        interaction: { mode: 'index', intersect: false },
-        plugins: {
-          title: {
-            display: true,
-            text: start && end
-              ? `Máquina ${m} — ${start} → ${end}`
-              : `Máquina ${m} — ${date} - ${turno}`
-          },
-          tooltip: {
-            callbacks: {
-              label: ctx => {
-                const y = ctx.parsed.y;
-                if (y === 1)   return 'Encendida';
-                if (y === 0.8) return 'Produciendo';
-                return 'Apagada';
-              }
-            }
-          },
-          legend: {
-            labels: {
-              filter: item => !item.text.startsWith('Fondo ')
-            }
-          }
-        },
-        scales: {
-          x: {
-            type:'time', time:{unit:'hour',displayFormats:{hour:'HH:mm'}},
-            ticks:{autoSkip:false,
-              callback:(v,i,ticks)=>new Date(ticks[i].value)
-                .toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',timeZone: 'UTC'})
-            },//lo que recien cambiamos
-            title:{display:true,text:'Hora'}
-          },
-          y: {
-            min:0, max:1.1,
-            ticks:{callback:v=>{
-              if      (v===1)   return 'Encendida';
-              else if (v===0.8) return 'Produciendo';
-              else if (v===0)   return 'Apagada';
-              else return '';
-            }},
-            title:{display:true,text:'Estado'}
-          }
-        }
-      }
+  if (filterBtn) {
+    filterBtn.addEventListener('click', (evt) => {
+      evt.preventDefault();
+      const date = datePicker?.value;
+      const turno = turnoSelect?.value;
+      if (!date || !turno) return;
+      // limpiar start/end para forzar modo turno
+      if (startDate) startDate.value = "";
+      if (endDate) endDate.value = "";
+      updateAllCharts();
     });
-
-    // Resumen textual
-    const resumen = { apagada:0, encendida:0, produciendo:0 };
-    data.forEach(d=>{
-      if      (d.mOn===0)        resumen.apagada++;
-      else if (d.mWo===1)        resumen.produciendo++;
-      else                        resumen.encendida++;
-    });
-    const total = data.length, totalMin = total*3;
-    const lineHTML = (n,v)=>{
-      const mins = v*3, pct = ((mins/totalMin)*100).toFixed(1);
-      return `<strong>${n}</strong>: ${mins} min (${pct}%)`;
-    };
-    const t0 = times[0].toLocaleString('es-AR',{dateStyle:'short',timeStyle:'medium',    timeZone: 'UTC'});
-    const t1 = times[total-1].toLocaleString('es-AR',{dateStyle:'short',timeStyle:'medium',     timeZone: 'UTC'});
-    document.getElementById(`resumen-${m}`).innerHTML = `
-      <div class="alert alert-light mt-2">
-        ${lineHTML('Produciendo',   resumen.produciendo)}<br>
-        ${lineHTML('Encendida sin producir', resumen.encendida)}<br>
-        ${lineHTML('Apagada',       resumen.apagada)}<br>
-        <strong>Inicio:</strong> ${t0}<br>
-        <strong>Fin:</strong> ${t1}<br>
-        <strong># muestras:</strong> ${total}
-      </div>
-    `;
   }
 
-  window.addEventListener('DOMContentLoaded', () => {
-    maquinas.forEach(m => fetchAndRender(m));
-  });
-
-  document.addEventListener('DOMContentLoaded', () => {
-    const btn = document.getElementById('navTortasBtn');
-    if (btn) {
-      const urlParams = new URLSearchParams(window.location.search);
-      const date  = urlParams.get('date');
-      const turno = urlParams.get('turno');
-      const start = urlParams.get('start');
-      const end   = urlParams.get('end');
-      let href;
-
-      if (start && end) {
-        href = `/?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`;
-      } else if (date && turno) {
-        href = `/?date=${encodeURIComponent(date)}&turno=${encodeURIComponent(turno)}`;
-      } else {
-        href = '/';
-      }
-
-      btn.setAttribute('href', href);
-    }
-  });
-</script> -->
+  if (customRangeBtn) {
+    customRangeBtn.addEventListener('click', (evt) => {
+      evt.preventDefault();
+      const start = startDate?.value;
+      const end   = endDate?.value;
+      if (!start || !end) return;
+      // limpiar date para forzar modo rango libre
+      if (datePicker) datePicker.value = "";
+      updateAllCharts();
+    });
+  }
+});
+/* --------------------------------------------------------------------- */
+</script>
 {% endblock %}

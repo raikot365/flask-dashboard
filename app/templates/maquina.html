@@ -90,7 +90,7 @@
       } else if (date && turno) {
           apiUrl += `date=${date}&turno=${turno}`;
           volverUrl += `date=${date}&turno=${turno}`;
-          chartTitle += ` - Fecha ${date} - Turno ${turno}`;
+          chartTitle += ` - Fecha ${date} - ${turno}`;
       } else {
           alert('Faltan parámetros de fecha y hora o turno');
           return;

@@ -464,12 +464,77 @@ def maquinas():
     return render_template(
         "maquinas.html",
         maquinas=maquinas,
-        # Pasa ambos pares de parámetros (uno de los dos estará vacío)
-        date=args.get("date", ""),
-        turno=args.get("turno", ""),
-        start=start_str or "",
-        end=end_str or ""
+        initial_date=args.get("date", ""),
+        initial_turno=args.get("turno", ""),
+        initial_start=start_str or "",
+        initial_end=end_str or ""
     )
+
+# --------------------------------------------------------------------------
+# API: obtener lista de máquinas para un intervalo (JSON)
+# --------------------------------------------------------------------------
+@app.route("/api/maquinas")
+@require_login
+def api_maquinas():
+    eng = get_engine()
+    args = request.args
+
+    # Modo rango libre
+    if "start" in args and "end" in args:
+        try:
+            start = datetime.fromisoformat(args["start"])
+            end   = datetime.fromisoformat(args["end"])
+        except ValueError:
+            abort(400, "Formato de fecha/hora inválido")
+
+        if start.tzinfo is None:
+            start = argentina_tz.localize(start)
+        if end.tzinfo is None:
+            end = argentina_tz.localize(end)
+
+        label = f"{start.strftime('%Y-%m-%d %H:%M')} \u2192 {end.strftime('%Y-%m-%d %H:%M')}"
+
+    else:
+        # Modo fecha+turno (necesita 'date' y 'turno')
+        selected_date = args.get("date")
+        selected_turno = args.get("turno")
+        shifts = {
+            'TM': ("07:00:00", "15:00:00"),
+            'TT': ("15:00:00", "23:00:00"),
+            'TN': ("23:00:00", "07:00:00")
+        }
+
+        if not selected_date or not selected_turno or selected_turno not in shifts:
+            abort(400, "Faltan fecha y turno válidos")
+
+        d = datetime.strptime(selected_date, "%Y-%m-%d").date()
+        start_naive = datetime.combine(d, datetime.strptime(shifts[selected_turno][0], "%H:%M:%S").time())
+        end_day = d + timedelta(days=1) if selected_turno == 'TN' else d
+        end_naive = datetime.combine(end_day, datetime.strptime(shifts[selected_turno][1], "%H:%M:%S").time())
+
+        start = argentina_tz.localize(start_naive)
+        end = argentina_tz.localize(end_naive)
+        label = f"{selected_date} - Turno {selected_turno}"
+
+    # Consulta máquinas distintas en el intervalo
+    with eng.connect() as conn:
+        rows = conn.execute(
+            text("""
+                SELECT DISTINCT m
+                FROM registros
+                WHERE time >= :s AND time < :e
+                ORDER BY m
+            """), {"s": start, "e": end}
+        ).fetchall()
+
+    maquinas = [r[0] for r in rows]
+
+    return jsonify({
+        "maquinas": maquinas,
+        "start": start.isoformat(),
+        "end": end.isoformat(),
+        "label": label
+    })
 
 # --------------------------------------------------------------------------
 # Exportar vista a Excel
