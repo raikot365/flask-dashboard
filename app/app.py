@@ -241,9 +241,9 @@ def api_vista():
         selected_date = args.get("date")
         selected_turno = args.get("turno")
         shifts = {
-            'TM': ("07:00:00", "15:00:00"),
-            'TT': ("15:00:00", "23:00:00"),
-            'TN': ("23:00:00", "07:00:00")
+            'TM': ("07:15:00", "15:15:00"),
+            'TT': ("15:15:00", "23:15:00"),
+            'TN': ("23:15:00", "07:15:00")
         }
 
         if not selected_date or not selected_turno or selected_turno not in shifts:
@@ -324,9 +324,9 @@ def api_maquina(m):
             abort(400, f"Formato de fecha inválido: {e}")
     elif date and turno:
         shifts = {
-            'TM': ("07:00:00", "15:00:00"),
-            'TT': ("15:00:00", "23:00:00"),
-            'TN': ("23:00:00", "07:00:00")
+            'TM': ("07:15:00", "15:15:00"),
+            'TT': ("15:15:00", "23:15:00"),
+            'TN': ("23:15:00", "07:15:00")
         }
         if turno not in shifts:
             abort(400, "Turno inválido")
@@ -425,9 +425,9 @@ def maquinas():
     # Modo fecha+turno
     else:
         shifts = {
-            'TM': ("07:00:00", "15:00:00"),
-            'TT': ("15:00:00", "23:00:00"),
-            'TN': ("23:00:00", "07:00:00")
+            'TM': ("07:15:00", "15:15:00"),
+            'TT': ("15:15:00", "23:15:00"),
+            'TN': ("23:15:00", "07:15:00")
         }
         date  = args.get("date")
         turno = args.get("turno")
@@ -499,9 +499,9 @@ def api_maquinas():
         selected_date = args.get("date")
         selected_turno = args.get("turno")
         shifts = {
-            'TM': ("07:00:00", "15:00:00"),
-            'TT': ("15:00:00", "23:00:00"),
-            'TN': ("23:00:00", "07:00:00")
+            'TM': ("07:15:00", "15:15:00"),
+            'TT': ("15:15:00", "23:15:00"),
+            'TN': ("23:15:00", "07:15:00")
         }
 
         if not selected_date or not selected_turno or selected_turno not in shifts:
