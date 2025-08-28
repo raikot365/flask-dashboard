@@ -1,55 +1,82 @@
 {% extends 'layout.html' %}
 {% block title %}Dashboard{% endblock %}
 {% block body %}
-<div class="container my-4" style="max-width: 1200px;">
-    <div class="row mb-3">
-        <div class="col-md-5">
-            <input type="date" id="datePicker" class="form-control" value="{{ initial_date }}">
-        </div>
-        <div class="col-md-5">
-            <select id="turnoSelect" class="form-select">
-                <option value="TM" {% if initial_turno == 'TM' %}selected{% endif %}>Mañana (7:15-15:15hs)</option>
-                <option value="TT" {% if initial_turno == 'TT' %}selected{% endif %}>Tarde (15:15-23:15hs)</option>
-                <option value="TN" {% if initial_turno == 'TN' %}selected{% endif %}>Noche (23:15-7:15hs)</option>
-            </select>
-        </div>
-        <div class="col-md-2">
-            <button id="filterBtn" class="btn btn-primary w-100">Filtrar por turno</button>
-        </div>
+<style>
+  .controls-wrapper { max-width: 1200px; margin: 0 auto; }
 
-    </div>
+  .charts-fluid { width: 100%; background: transparent; padding: 0 12px; }
+  .charts-inner {
+    max-width: 1600px;  /* ajustar ancho de recuadro que contiene los graficos */
+    margin: 0 auto;
+  }
 
-    <div class="row mb-3">
-        <div class="col-md-5">
-            <label for="startDate" style="margin-right: 5px;">Fecha y hora inicio</label>
-            {# Modificado: Usar default('') para que sea una cadena vacía si initial_start es None #}
-            <input type="datetime-local" id="startDate" class="form-control" value="{{ initial_start | default('') }}">
-        </div>
-        <div class="col-md-5">
-            <label for="endDate" style="margin-right: 5px;">Fecha y hora fin</label>
-            {# Modificado: Usar default('') para que sea una cadena vacía si initial_end es None #}
-            <input type="datetime-local" id="endDate" class="form-control" value="{{ initial_end | default('') }}">
-        </div>
-        <div class="col-md-2 d-flex align-items-end">
-            <button id="customRangeBtn" class="btn btn-outline-primary w-100">Consultar rango libre</button>
-        </div>
-    </div>
+  #chartsContainer {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr); /* ajustar cantidad de columnas */
+    gap: 1rem;
+  }
+  @media (max-width: 1600px) { #chartsContainer { grid-template-columns: repeat(5, 1fr); } }
+  @media (max-width: 1400px) { #chartsContainer { grid-template-columns: repeat(4, 1fr); } }
+  @media (max-width: 1100px) { #chartsContainer { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 768px)  { #chartsContainer { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 576px)  { #chartsContainer { grid-template-columns: 1fr; } }
 
-    <div class="row" id="chartsContainer"></div>
+  /* ajustar tamaño de cada carta*/
+  .chart-card { height: 300px; display:flex; flex-direction:column; max-height: 360px; }
+  .chart-card .card-body { flex:1; position:relative; padding:0.5rem; }
+  .chart-card canvas { width:100% !important; height:100% !important; display:block; }
+
+  .chart-card .card-header { font-size: 0.95rem; padding: .35rem .75rem; }
+</style>
+
+<div class="controls-wrapper my-4">
+  <div class="row mb-3">
+      <div class="col-md-5">
+          <input type="date" id="datePicker" class="form-control" value="{{ initial_date }}">
+      </div>
+      <div class="col-md-5">
+          <select id="turnoSelect" class="form-select">
+              <option value="TM" {% if initial_turno == 'TM' %}selected{% endif %}>Mañana (7:15-15:15hs)</option>
+              <option value="TT" {% if initial_turno == 'TT' %}selected{% endif %}>Tarde (15:15-23:15hs)</option>
+              <option value="TN" {% if initial_turno == 'TN' %}selected{% endif %}>Noche (23:15-7:15hs)</option>
+          </select>
+      </div>
+      <div class="col-md-2">
+          <button id="filterBtn" class="btn btn-primary w-100">Filtrar por turno</button>
+      </div>
+  </div>
+
+  <div class="row mb-3">
+      <div class="col-md-5">
+          <label for="startDate" style="margin-right: 5px;">Fecha y hora inicio</label>
+          <input type="datetime-local" id="startDate" class="form-control" value="{{ initial_start | default('') }}">
+      </div>
+      <div class="col-md-5">
+          <label for="endDate" style="margin-right: 5px;">Fecha y hora fin</label>
+          <input type="datetime-local" id="endDate" class="form-control" value="{{ initial_end | default('') }}">
+      </div>
+      <div class="col-md-2 d-flex align-items-end">
+          <button id="customRangeBtn" class="btn btn-outline-primary w-100">Consultar rango libre</button>
+      </div>
+  </div>
+</div>
+
+<div class="charts-fluid">
+  <div class="charts-inner">
+    <div id="chartsContainer"></div>
+  </div>
 </div>
 
 <script src="{{ url_for('static', filename='js/chart.js') }}"></script>
-<!-- <script src="https://cdn.jsdelivr.net/npm/chart.js"></script> -->
 <script>
     async function loadData(params) {
         const query = new URLSearchParams(params).toString();
         const res = await fetch(`/api/vista?${query}`);
-        // Modificado: Verificar si la respuesta es OK antes de intentar parsear como JSON
         if (!res.ok) {
-            const errorText = await res.text(); // Obtener el texto del error
+            const errorText = await res.text();
             console.error("Error al cargar datos:", res.status, res.statusText, errorText);
             alert("No se pudieron obtener los datos. Por favor, verifica el rango de fechas/turnos.");
-            return { data: [] }; // Devolver un objeto vacío para evitar errores posteriores
+            return { data: [] };
         }
         return res.json();
     }
@@ -64,24 +91,21 @@
         }
 
         data.data.forEach(item => {
+            // cada "col" es una tarjeta que ocupa una celda del grid
             const col = document.createElement('div');
-            col.className = 'col-md-4 mb-4';
+            // clase custom para estilo
+            col.className = 'chart-col';
             const card = document.createElement('div');
-            card.className = 'card h-100';
-            //card.style.cursor = 'pointer';
-            
+            card.className = 'card h-100 chart-card';
+
             const header = document.createElement('div');
             header.className = 'card-header';
-            header.style.cursor = 'pointer'; 
-            // Crea el link solo en el header con el nombre de la máquina
+            header.style.cursor = 'pointer';
             const link = document.createElement('a');
             link.style.textDecoration = "none";
-            link.style.display = "block";      
-            link.style.width = "100%";        
-            link.style.height = "100%"; 
-            // link.style.color = "inherit";
-            // link.style.fontWeight = "bold";
-            // link.style.fontSize = "1.1rem";
+            link.style.display = "block";
+            link.style.width = "100%";
+            link.style.height = "100%";
 
             if (startISO && endISO) {
                 link.href = `/maquina/${item.m}?start=${startISO}&end=${endISO}`;
@@ -102,19 +126,34 @@
             col.appendChild(card);
             container.appendChild(col);
 
-            const total = item.N;
-            const on = item.On;
-            const off = item.Off;
-            const prod = item.Prod;
-            const noProd = item.NoProd;
+            // cálculo de porcentajes
+            const total = item.N || 0;
+            const on = item.On || 0;
+            const off = item.Off || 0;
+            const prod = item.Prod || 0;
+            const noProd = item.NoProd || 0;
 
-            const percOn = on / total * 100;
-            const percOff = off / total * 100;
-            const percProd = on > 0 ? prod / on * 100 : 0;
-            const percNoProd = on > 0 ? noProd / on * 100 : 0;
+            const percOn = total > 0 ? (on / total * 100) : 0;
+            const percOff = total > 0 ? (off / total * 100) : 0;
+            const percProd = on > 0 ? (prod / on * 100) : 0;
+            const percNoProd = on > 0 ? (noProd / on * 100) : 0;
 
             const offAngle = (percOff / 100) * 360;
             const outerCirc = (percOn / 100) * 360;
+
+            // Preparar array de valores planos para la leyenda personalizada
+            const datasetValues = [
+                percNoProd, percProd, // dataset 0
+                percOff, percOn      // dataset 1
+            ];
+
+            // calcula minutos por etiqueta (cada muestra = 3 minutos)
+            const minutesByLabel = [
+            noProd * 3, // 'NoProd'  (dataset 0, index 0)
+            prod * 3,   // 'Prod'    (dataset 0, index 1)
+            off * 3,    // 'Apagada' (dataset 1, index 0)
+            on * 3      // 'Encendida' (dataset 1, index 1)
+            ];
 
             new Chart(canvas.getContext('2d'), {
                 type: 'pie',
@@ -134,30 +173,38 @@
                             hoverBorderColor: '#808080'
                         }
                     ],
-                    labels: ['Sin producir', 'Produciendo', 'Apagada', 'Encendida']
+                    labels: ['Sin Producir', 'Produciendo', 'Apagada', 'Encendida']
                 },
                 options: {
                     maintainAspectRatio: false,
                     plugins: {
                         tooltip: {
                             callbacks: {
-                                title: (ctx) => {
-                                    const i = (ctx[0].datasetIndex * 2) + ctx[0].dataIndex;
-                                    return `${ctx[0].chart.data.labels[i]}: ${ctx[0].formattedValue}%`;
+                                title: function() { return ''; },
+                                label: function(context) {
+                                    const labelIndex = (context.datasetIndex * 2) + context.dataIndex;
+                                    const mins = minutesByLabel[labelIndex] ?? 0;
+                                    return `${context.chart.data.labels[labelIndex]}: ${mins} min`;
                                 }
                             }
                         },
                         legend: {
                             labels: {
+                                font: { size: 12 },
+                                boxWidth: 10,
                                 generateLabels: function(chart) {
                                     const original = Chart.overrides.pie.plugins.legend.labels.generateLabels;
                                     const labelsOriginal = original.call(this, chart);
                                     let datasetColors = chart.data.datasets.map(e => e.backgroundColor).flat();
+                                    const flatValues = chart.data.datasets.map(d => d.data).flat();
 
                                     labelsOriginal.forEach(label => {
-                                        label.datasetIndex = Math.floor(label.index / 2);
+                                        const labelIndex = label.index;
+                                        label.datasetIndex = Math.floor(labelIndex / 2);
                                         label.hidden = !chart.isDatasetVisible(label.datasetIndex);
-                                        label.fillStyle = datasetColors[label.index];
+                                        label.fillStyle = datasetColors[labelIndex];
+                                        const val = (flatValues[labelIndex] ?? 0);
+                                        label.text = `${chart.data.labels[labelIndex]}: ${Number(val).toFixed(1)}%`;
                                     });
 
                                     return labelsOriginal;
@@ -195,12 +242,10 @@
         }
 
         try {
-            // loadData ahora maneja errores HTTP y devuelve { data: [] } en caso de falla
             const data = await loadData({ start: startISO, end: endISO });
             renderCharts(data, null, null, startISO, endISO);
         } catch (err) {
             console.error("Error al cargar datos por rango personalizado:", err);
-            // El error ya se muestra dentro de loadData, aquí solo para depuración adicional si es necesario.
         }
     });
 
@@ -208,19 +253,15 @@
     window.addEventListener('DOMContentLoaded', async () => {
         const initial_date_param = '{{ initial_date }}';
         const initial_turno_param = '{{ initial_turno }}';
-        // Modificado: Usar default('') para que sean cadenas vacías si la variable es None
         const initial_start_param = '{{ initial_start | default('') }}';
         const initial_end_param = '{{ initial_end | default('') }}';
 
         document.getElementById('datePicker').value = initial_date_param;
         document.getElementById('turnoSelect').value = initial_turno_param;
-        
-        // Modificado: Establece el valor de los campos de fecha/hora, que ahora serán cadenas vacías si es None
         document.getElementById('startDate').value = initial_start_param;
         document.getElementById('endDate').value = initial_end_param;
 
         let paramsToLoad = {};
-        // Modificado: La condición ahora verifica si las cadenas no están vacías
         if (initial_start_param !== '' && initial_end_param !== '') {
             paramsToLoad = { start: initial_start_param, end: initial_end_param };
         } else {
@@ -229,11 +270,11 @@
 
         const data = await loadData(paramsToLoad);
         renderCharts(
-            data, 
-            initial_date_param, 
-            initial_turno_param, 
-            initial_start_param || null, // Pasa null si es cadena vacía
-            initial_end_param || null    // Pasa null si es cadena vacía
+            data,
+            initial_date_param,
+            initial_turno_param,
+            initial_start_param || null,
+            initial_end_param || null
         );
     });
 
@@ -254,7 +295,5 @@
         window.location.href = url;
         });
     }
-
-
 </script>
 {% endblock %}
