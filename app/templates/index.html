@@ -6,13 +6,13 @@
 
   .charts-fluid { width: 100%; background: transparent; padding: 0 12px; }
   .charts-inner {
-    max-width: 1600px;  /* ajustar ancho de recuadro que contiene los graficos */
+    max-width: 1600px;
     margin: 0 auto;
   }
 
   #chartsContainer {
     display: grid;
-    grid-template-columns: repeat(5, 1fr); /* ajustar cantidad de columnas */
+    grid-template-columns: repeat(5, 1fr);
     gap: 1rem;
   }
   @media (max-width: 1600px) { #chartsContainer { grid-template-columns: repeat(5, 1fr); } }
@@ -21,12 +21,15 @@
   @media (max-width: 768px)  { #chartsContainer { grid-template-columns: repeat(2, 1fr); } }
   @media (max-width: 576px)  { #chartsContainer { grid-template-columns: 1fr; } }
 
-  /* ajustar tamaño de cada carta*/
   .chart-card { height: 300px; display:flex; flex-direction:column; max-height: 360px; }
   .chart-card .card-body { flex:1; position:relative; padding:0.5rem; }
   .chart-card canvas { width:100% !important; height:100% !important; display:block; }
 
   .chart-card .card-header { font-size: 0.95rem; padding: .35rem .75rem; }
+
+  /* inputs para grupo personalizado */
+  #customGroupInputs { display: none; gap: 0.5rem; align-items: center; }
+  #customGroupInputs input { width: 100px; }
 </style>
 
 <div class="controls-wrapper my-4">
@@ -59,6 +62,32 @@
           <button id="customRangeBtn" class="btn btn-outline-primary w-100">Consultar rango libre</button>
       </div>
   </div>
+
+  <!-- Selector de grupos -->
+  <div class="row mb-3">
+    <div class="col-md-5">
+      <label for="grupoSelect" style="margin-right: 5px;">Grupo de máquinas</label>
+            <select id="grupoSelect" class="form-select">
+                <option value="all">Todas</option>
+                <!-- Valores con formato list:val1,val2,... para seleccionar máquinas individuales -->
+                <option value="list:702,703,704,705,706">Grupo 1 (Máquinas 1–5)</option>
+                <option value="list:710,711,712,713,714,715">Grupo 2 (Máquinas 6–10)</option>
+                <option value="list:719,720,721,722,723">Grupo 3 (Máquinas 11–15)</option>
+                             <!-- <option value="custom">Personalizado (ingresar rango)</option> -->
+            </select>
+    </div>
+        <div class="col-md-2 d-flex align-items-end">
+          <button id="resetGroupBtn" class="btn btn-secondary w-100">Reset grupos</button>
+      </div>
+            <!-- <div class="col-md-4" id="customGroupInputs">
+                <label style="width:100%">Rango personalizado</label>
+                <div style="display:flex; gap:8px;">
+                    <input type="number" id="groupStart" class="form-control" placeholder="Máq. inicio" min="0">
+                    <input type="number" id="groupEnd" class="form-control" placeholder="Máq. fin" min="0">
+                    <button id="applyCustomGroup" class="btn btn-primary">Aplicar</button>
+                </div>
+            </div> -->
+  </div>
 </div>
 
 <div class="charts-fluid">
@@ -69,6 +98,11 @@
 
 <script src="{{ url_for('static', filename='js/chart.js') }}"></script>
 <script>
+    // Guardas globales para reutilizar la data sin pedir al backend cada vez
+    window._lastData = null;
+    window._lastParams = null;
+
+    // Función para pedir datos al backend
     async function loadData(params) {
         const query = new URLSearchParams(params).toString();
         const res = await fetch(`/api/vista?${query}`);
@@ -81,20 +115,70 @@
         return res.json();
     }
 
+    // Renderiza los charts a partir del objeto devuelto por el backend
     function renderCharts(data, date = null, turno = null, startISO = null, endISO = null) {
         const container = document.getElementById('chartsContainer');
         container.innerHTML = '';
+
+        // guardar en global para poder re-filtrar sin recargar
+        window._lastData = data;
+        window._lastParams = { date, turno, startISO, endISO };
 
         if (!data || !data.data || data.data.length === 0) {
             container.innerHTML = '<div class="alert alert-warning">No hay datos para el período seleccionado.</div>';
             return;
         }
 
-        data.data.forEach(item => {
-            // cada "col" es una tarjeta que ocupa una celda del grid
+        // Obtener la selección de grupo
+        const grupoVal = document.getElementById('grupoSelect').value;
+
+        let filtered = data.data.slice(); // copia
+        // parseo de m como número para comparación
+        filtered = filtered.filter(item => {
+            // si item.m es nulo/indef, lo excluimos
+            if (item.m === undefined || item.m === null) return false;
+            const mNum = Number(item.m);
+            return !Number.isNaN(mNum);
+        });
+
+        // aplicar filtro según grupoVal
+        if (grupoVal && grupoVal !== 'all') {
+            if (grupoVal.startsWith('range:')) {
+                // backward-compatible: range:min:max
+                const parts = grupoVal.split(':');
+                const min = Number(parts[1]);
+                const max = Number(parts[2]);
+                filtered = filtered.filter(item => {
+                    const mNum = Number(item.m);
+                    return mNum >= min && mNum <= max;
+                });
+            } else if (grupoVal.startsWith('list:')) {
+                // new format: list:val1,val2,...
+                const listPart = grupoVal.substring(5); // after 'list:'
+                const allowed = listPart.split(',').map(s => Number(s.trim())).filter(n => !Number.isNaN(n));
+                if (allowed.length > 0) {
+                    const allowedSet = new Set(allowed);
+                    filtered = filtered.filter(item => allowedSet.has(Number(item.m)));
+                } else {
+                    // if parsing failed, keep nothing to be safe
+                    filtered = [];
+                }
+            }
+        }
+
+        // ordenar por número de máquina ascendente para consistencia
+        filtered.sort((a,b) => Number(a.m) - Number(b.m));
+
+        if (filtered.length === 0) {
+            container.innerHTML = '<div class="alert alert-warning">No hay máquinas en el grupo seleccionado.</div>';
+            return;
+        }
+
+        // Renderizar cada tarjeta + gráfico
+        filtered.forEach(item => {
             const col = document.createElement('div');
-            // clase custom para estilo
             col.className = 'chart-col';
+
             const card = document.createElement('div');
             card.className = 'card h-100 chart-card';
 
@@ -107,10 +191,11 @@
             link.style.width = "100%";
             link.style.height = "100%";
 
+            // construir href según parámetros disponibles
             if (startISO && endISO) {
-                link.href = `/maquina/${item.m}?start=${startISO}&end=${endISO}`;
+                link.href = `/maquina/${item.m}?start=${encodeURIComponent(startISO)}&end=${encodeURIComponent(endISO)}`;
             } else {
-                link.href = `/maquina/${item.m}?date=${date}&turno=${turno}`;
+                link.href = `/maquina/${item.m}?date=${encodeURIComponent(date)}&turno=${encodeURIComponent(turno)}`;
             }
             link.textContent = `Máquina ${item.m}`;
             header.appendChild(link);
@@ -126,7 +211,7 @@
             col.appendChild(card);
             container.appendChild(col);
 
-            // cálculo de porcentajes
+            // valores (usa las mismas claves que tenías)
             const total = item.N || 0;
             const on = item.On || 0;
             const off = item.Off || 0;
@@ -141,20 +226,19 @@
             const offAngle = (percOff / 100) * 360;
             const outerCirc = (percOn / 100) * 360;
 
-            // Preparar array de valores planos para la leyenda personalizada
             const datasetValues = [
-                percNoProd, percProd, // dataset 0
-                percOff, percOn      // dataset 1
+                percNoProd, percProd,
+                percOff, percOn
             ];
 
-            // calcula minutos por etiqueta (cada muestra = 3 minutos)
             const minutesByLabel = [
-            noProd * 3, // 'NoProd'  (dataset 0, index 0)
-            prod * 3,   // 'Prod'    (dataset 0, index 1)
-            off * 3,    // 'Apagada' (dataset 1, index 0)
-            on * 3      // 'Encendida' (dataset 1, index 1)
+                noProd * 3,
+                prod * 3,
+                off * 3,
+                on * 3
             ];
 
+            // Crear gráfico (no guardamos instancia; se destruye al remover el canvas del DOM)
             new Chart(canvas.getContext('2d'), {
                 type: 'pie',
                 data: {
@@ -213,6 +297,7 @@
                             onClick: function(e, legendItem, legend) {
                                 const chart = legend.chart;
                                 const index = legendItem.datasetIndex;
+                                // toggle visibility
                                 chart.getDatasetMeta(index).hidden = chart.isDatasetVisible(index);
                                 chart.update();
                             }
@@ -223,77 +308,106 @@
         });
     }
 
-    // Filtro tradicional
-    document.getElementById('filterBtn').addEventListener('click', async () => {
-        const date = document.getElementById('datePicker').value;
-        const turno = document.getElementById('turnoSelect').value;
-        const data = await loadData({ date, turno });
-        renderCharts(data, date, turno);
-    });
+    // -> Utils: pedir datos y guardar último resultado
+    async function fetchAndRender(params) {
+        const data = await loadData(params);
+        // guardar la última data y parámetros
+        window._lastData = data;
+        window._lastParams = params;
+        // params puede tener start/end o date/turno; desglosamos para renderCharts
+        const date = params.date || null;
+        const turno = params.turno || null;
+        const start = params.start || null;
+        const end = params.end || null;
+        renderCharts(data, date, turno, start, end);
+    }
 
-    // Filtro por rango personalizado
-    document.getElementById('customRangeBtn').addEventListener('click', async () => {
-        const startISO = document.getElementById('startDate').value;
-        const endISO = document.getElementById('endDate').value;
-
-        if (!startISO || !endISO) {
-            alert("Por favor completá las fechas y horas de inicio y fin.");
-            return;
-        }
-
-        try {
-            const data = await loadData({ start: startISO, end: endISO });
-            renderCharts(data, null, null, startISO, endISO);
-        } catch (err) {
-            console.error("Error al cargar datos por rango personalizado:", err);
-        }
-    });
-
-    // Carga inicial
-    window.addEventListener('DOMContentLoaded', async () => {
+    // Eventos
+    document.addEventListener('DOMContentLoaded', async () => {
+        // Valores iniciales desde Jinja
         const initial_date_param = '{{ initial_date }}';
         const initial_turno_param = '{{ initial_turno }}';
-        const initial_start_param = '{{ initial_start | default('') }}';
-        const initial_end_param = '{{ initial_end | default('') }}';
+    const initial_start_param = "{{ initial_start | default('') }}";
+    const initial_end_param = "{{ initial_end | default('') }}";
 
+        // setear inputs
         document.getElementById('datePicker').value = initial_date_param;
         document.getElementById('turnoSelect').value = initial_turno_param;
         document.getElementById('startDate').value = initial_start_param;
         document.getElementById('endDate').value = initial_end_param;
 
+        // añadir listener del control de grupos: simple re-render usando la data ya cargada
+        const grupoSelect = document.getElementById('grupoSelect');
+        if (grupoSelect) {
+            grupoSelect.addEventListener('change', () => {
+                if (window._lastData) {
+                    renderCharts(window._lastData, window._lastParams?.date, window._lastParams?.turno, window._lastParams?.start, window._lastParams?.end);
+                }
+            });
+        }
+
+        // reset button
+        const resetGroupBtn = document.getElementById('resetGroupBtn');
+        if (resetGroupBtn) {
+            resetGroupBtn.addEventListener('click', () => {
+                document.getElementById('grupoSelect').value = 'all';
+                if (window._lastData) {
+                    renderCharts(window._lastData, window._lastParams?.date, window._lastParams?.turno, window._lastParams?.start, window._lastParams?.end);
+                }
+            });
+        }
+
+        // botones de filtro
+        document.getElementById('filterBtn').addEventListener('click', async () => {
+            const date = document.getElementById('datePicker').value;
+            const turno = document.getElementById('turnoSelect').value;
+            const params = { date, turno };
+            await fetchAndRender(params);
+        });
+
+        document.getElementById('customRangeBtn').addEventListener('click', async () => {
+            const startISO = document.getElementById('startDate').value;
+            const endISO = document.getElementById('endDate').value;
+
+            if (!startISO || !endISO) {
+                alert("Por favor completá las fechas y horas de inicio y fin.");
+                return;
+            }
+
+            try {
+                const params = { start: startISO, end: endISO };
+                await fetchAndRender(params);
+            } catch (err) {
+                console.error("Error al cargar datos por rango personalizado:", err);
+            }
+        });
+
+        // carga inicial automática
         let paramsToLoad = {};
         if (initial_start_param !== '' && initial_end_param !== '') {
             paramsToLoad = { start: initial_start_param, end: initial_end_param };
         } else {
             paramsToLoad = { date: initial_date_param, turno: initial_turno_param };
         }
+        await fetchAndRender(paramsToLoad);
 
-        const data = await loadData(paramsToLoad);
-        renderCharts(
-            data,
-            initial_date_param,
-            initial_turno_param,
-            initial_start_param || null,
-            initial_end_param || null
-        );
-    });
-
-    // -> Botón de navbar: llevar a /maquinas
-    const navBtn = document.getElementById('navMaquinasBtn');
-    if (navBtn) {
-        navBtn.addEventListener('click', () => {
-        const startISO = document.getElementById('startDate').value;
-        const endISO   = document.getElementById('endDate').value;
-        let url;
-        if (startISO && endISO) {
-            url = `/maquinas?start=${encodeURIComponent(startISO)}&end=${encodeURIComponent(endISO)}`;
-        } else {
-            const date  = document.getElementById('datePicker').value;
-            const turno = document.getElementById('turnoSelect').value;
-            url = `/maquinas?date=${encodeURIComponent(date)}&turno=${encodeURIComponent(turno)}`;
+        // botón navbar (si existe)
+        const navBtn = document.getElementById('navMaquinasBtn');
+        if (navBtn) {
+            navBtn.addEventListener('click', () => {
+                const startISO = document.getElementById('startDate').value;
+                const endISO   = document.getElementById('endDate').value;
+                let url;
+                if (startISO && endISO) {
+                    url = `/maquinas?start=${encodeURIComponent(startISO)}&end=${encodeURIComponent(endISO)}`;
+                } else {
+                    const date  = document.getElementById('datePicker').value;
+                    const turno = document.getElementById('turnoSelect').value;
+                    url = `/maquinas?date=${encodeURIComponent(date)}&turno=${encodeURIComponent(turno)}`;
+                }
+                window.location.href = url;
+            });
         }
-        window.location.href = url;
-        });
-    }
+    });
 </script>
 {% endblock %}

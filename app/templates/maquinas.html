@@ -35,18 +35,35 @@
         </div>
     </div>
 
-    <div class="row" id="chartsContainer"></div>
+  <!-- Selector de grupos (list:, range:, custom) -->
+  <div class="row mb-3">
+    <div class="col-md-5">
+      <label for="grupoSelect" style="margin-right: 5px;">Grupo de máquinas</label>
+      <select id="grupoSelect" class="form-select">
+        <option value="all">Todas</option>
+        <!-- Valores con formato list:val1,val2,... para seleccionar máquinas individuales -->
+        <option value="list:702,703,704,705,706">Grupo 1 (Máquinas 1–5)</option>
+        <option value="list:710,711,712,713,714,715">Grupo 2 (Máquinas 6–10)</option>
+        <option value="list:719,720,721,722,723">Grupo 3 (Máquinas 11–15)</option>
+      </select>
+    </div>
+    
+    <div class="col-md-2 d-flex align-items-end">
+      <button id="resetGroupBtn" class="btn btn-secondary w-100">Reset grupos</button>
+    </div>
+  </div>
+
+  <div class="row" id="chartsContainer"></div>
 </div>
 
 <div class="container mt-4">
   <div id="checkboxes-maquinas" class="d-flex flex-wrap gap-2 mb-4">
     {% for m in maquinas %}
-      <div class="form-check btn-secondary" style="padding:3px 5px 3px 30px; border-radius:6px;">
-        <input class="form-check-input"
-               type="checkbox"
-               id="check-{{ m }}"
-               checked
-               onchange="toggleMaquina({{ m }})">
+   <div class="form-check btn-secondary" style="padding:3px 5px 3px 30px; border-radius:6px;">
+   <input class="form-check-input"
+     type="checkbox"
+     id="check-{{ m }}"
+     checked>
         <label class="form-check-label" for="check-{{ m }}">
           Máquina Nº {{ m }}
         </label>
@@ -115,13 +132,14 @@ function formatFull(d) {
 
 
 /* Valores que el servidor puede haber inyectado (si existen) — se usan como fallback */
-const JINJA_initial_date  = {{ initial_date | default('') | tojson }};
-const JINJA_initial_turno = {{ initial_turno | default('') | tojson }};
-const JINJA_initial_start = {{ initial_start | default('') | tojson }};
-const JINJA_initial_end   = {{ initial_end | default('') | tojson }};
+const JINJA_initial_date  = "{{ initial_date | default('') }}";
+const JINJA_initial_turno = "{{ initial_turno | default('') }}";
+const JINJA_initial_start = "{{ initial_start | default('') }}";
+const JINJA_initial_end   = "{{ initial_end | default('') }}";
 
 /* Lista actual de máquinas — inicialmente la que Jinja inyectó (si la inyectó) */
-let currentMachines = {{ maquinas | tojson | safe }};
+// currentMachines will be populated after fetch; start with empty array to keep this file valid JS
+let currentMachines = [];
 
 function getParamsFromControls() {
   return {
@@ -327,9 +345,11 @@ async function updateAllCharts() {
     const params = getParamsFromControls();
     const meta = await fetchMachines(params);
     currentMachines = meta.maquinas || [];
-    renderMachineBlocks(currentMachines);
+    // aplicar filtro de grupo en el cliente antes de renderizar
+    const machinesToShow = filterMachinesByGroup(currentMachines);
+    renderMachineBlocks(machinesToShow);
     updateURL(params);
-    currentMachines.forEach(m => {
+    machinesToShow.forEach(m => {
       const chk = document.getElementById(`check-${m}`);
       if (!chk || !chk.checked) return;
       fetchAndRender(m, params).catch(err => {
@@ -340,6 +360,36 @@ async function updateAllCharts() {
     });
   } catch (err) {
     console.error("Error updateAllCharts:", err);
+  }
+}
+
+/* Filtrado local de máquinas según control de grupo (soporta range:, list:, custom) */
+function filterMachinesByGroup(maquinas) {
+  try {
+    const grupoValEl = document.getElementById('grupoSelect');
+    if (!grupoValEl) return maquinas;
+    const grupoVal = grupoValEl.value;
+    if (!grupoVal || grupoVal === 'all') return maquinas;
+
+    // convertir elementos a números (filtramos nulos)
+    const cleaned = (maquinas || []).map(x => Number(x)).filter(n => !Number.isNaN(n));
+
+    if (grupoVal.startsWith('range:')) {
+      const parts = grupoVal.split(':');
+      const min = Number(parts[1]);
+      const max = Number(parts[2]);
+      return cleaned.filter(m => m >= min && m <= max);
+    } else if (grupoVal.startsWith('list:')) {
+      const listPart = grupoVal.substring(5);
+      const allowed = listPart.split(',').map(s => Number(s.trim())).filter(n => !Number.isNaN(n));
+      if (allowed.length === 0) return [];
+      const allowedSet = new Set(allowed);
+      return cleaned.filter(m => allowedSet.has(m));
+    }
+    return maquinas;
+  } catch (err) {
+    console.error('filterMachinesByGroup error', err);
+    return maquinas;
   }
 }
 
@@ -382,6 +432,44 @@ window.addEventListener('DOMContentLoaded', () => {
     const list  = document.getElementById('maquinas-list');
     if (boxes) boxes.innerHTML = '';
     if (list) list.innerHTML = '<div class="alert alert-info">Seleccione un turno+fecha o un rango y presione "Filtrar" o "Consultar rango libre".</div>';
+  }
+
+  // --- Control de grupos: mostrar inputs custom / re-render localmente ---
+  const grupoSelect = document.getElementById('grupoSelect');
+  const resetGroupBtn = document.getElementById('resetGroupBtn');
+
+  if (grupoSelect) {
+    grupoSelect.addEventListener('change', async () => {
+      const machinesFiltered = filterMachinesByGroup(currentMachines);
+      if (!currentMachines || currentMachines.length === 0) {
+        await updateAllCharts();
+        return;
+      }
+      renderMachineBlocks(machinesFiltered);
+      const params = getParamsFromControls();
+      machinesFiltered.forEach(m => {
+        const chk = document.getElementById(`check-${m}`);
+        if (!chk || !chk.checked) return;
+        fetchAndRender(m, params).catch(err => console.error('Error fetchAndRender (group change):', err));
+      });
+    });
+  }
+
+  if (resetGroupBtn) {
+    resetGroupBtn.addEventListener('click', async () => {
+      if (grupoSelect) grupoSelect.value = 'all';
+      if (!currentMachines || currentMachines.length === 0) {
+        await updateAllCharts();
+        return;
+      }
+      renderMachineBlocks(currentMachines);
+      const params = getParamsFromControls();
+      currentMachines.forEach(m => {
+        const chk = document.getElementById(`check-${m}`);
+        if (!chk || !chk.checked) return;
+        fetchAndRender(m, params).catch(err => console.error('Error fetchAndRender (reset):', err));
+      });
+    });
   }
 
   /* ---------- Botones: solo estos disparan updateAllCharts ---------- */
