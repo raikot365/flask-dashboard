@@ -90,12 +90,18 @@
 
 
 <script src="{{ url_for('static', filename='js/chart.umd.min.js') }}"></script>
+<script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
+<script src="{{ url_for('static', filename='js/chart-zoom.js') }}"></script>
 <script src="{{ url_for('static', filename='js/chartjs-adapter-date-fns.js') }}"></script>
+<script src="{{ url_for('static', filename='js/chart-luxon.js') }}"></script>
+<script src="{{ url_for('static', filename='js/chartjs-adapter-luxon.js') }}"></script>
 
 <!-- <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0"></script> -->
 
 <script>
+  // Registrar el plugin de zoom
+  Chart.register(ChartZoom);
   /* ---------- Helpers (idénticos) ---------- */
 function toHOUR(x) {
   const d = (x instanceof Date) ? x : new Date(typeof x === 'number' ? x : Date.parse(x));
@@ -301,7 +307,24 @@ async function fetchAndRender(m, params) {
           title: items => toDATE(items[0]?.parsed?.x ?? items[0]?.raw?.x ?? items[0]?.label),
           label: ctx => { const y=ctx.parsed.y; if(y===1) return 'Encendida'; if(y===0.8) return 'Produciendo'; return 'Apagada'; }
         }},
-        legend:{ labels:{ filter: item => !item.text.startsWith('Fondo ') } }
+        legend:{ labels:{ filter: item => !item.text.startsWith('Fondo ') } },
+        zoom:{
+          zoom:{
+            wheel:{ enabled:true, speed:0.1 },
+            // pinch:{ enabled:true },
+            mode:'x'
+          },
+          pan:{
+            enabled:true,
+            mode:'x',
+            // modifierKey:'shift',
+            onPan:({chart})=>{ chart.update('none'); }
+          },
+          limits:{
+            x:{min:'original', max:'original'},
+            y:{min:'original', max:'original'}
+          }
+        }
       },
       scales:{
         x:{ type:'time', time:{ unit:'hour', displayFormats:{ hour:'HH:mm' } },
